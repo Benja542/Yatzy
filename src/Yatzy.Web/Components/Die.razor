@@ -1,0 +1,49 @@
+@*
+    En terning tegnet som SVG. Value = 0 betyder "ikke kastet endnu".
+*@
+
+<button type="button"
+        class="die @(Held ? "die--held" : null) @(Value == 0 ? "die--empty" : null)"
+        disabled="@(!Clickable)"
+        title="@Title"
+        aria-pressed="@Held"
+        aria-label="@AriaLabel"
+        @onclick="OnClick">
+    <svg viewBox="0 0 100 100" role="img" aria-hidden="true">
+        @foreach (var (cx, cy) in Pips(Value))
+        {
+            <circle class="pip" cx="@cx" cy="@cy" r="9" />
+        }
+    </svg>
+</button>
+
+@code {
+    /// <summary>Terningens øjne (1-6). 0 tegner en tom terning.</summary>
+    [Parameter] public int Value { get; set; }
+
+    /// <summary>Er terningen låst?</summary>
+    [Parameter] public bool Held { get; set; }
+
+    /// <summary>Kan der klikkes på terningen?</summary>
+    [Parameter] public bool Clickable { get; set; } = true;
+
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private string Title => Value == 0
+        ? "Ikke kastet endnu"
+        : Held ? $"{Value} - låst. Klik for at kaste den om." : $"{Value} - klik for at låse den.";
+
+    private string AriaLabel => Value == 0 ? "Tom terning" : $"Terning med {Value}";
+
+    // Positionerne i et 3x3-gitter: 28, 50 og 72 på hver led.
+    private static IEnumerable<(int X, int Y)> Pips(int value) => value switch
+    {
+        1 => [(50, 50)],
+        2 => [(28, 28), (72, 72)],
+        3 => [(28, 28), (50, 50), (72, 72)],
+        4 => [(28, 28), (72, 28), (28, 72), (72, 72)],
+        5 => [(28, 28), (72, 28), (50, 50), (28, 72), (72, 72)],
+        6 => [(28, 28), (72, 28), (28, 50), (72, 50), (28, 72), (72, 72)],
+        _ => [],
+    };
+}

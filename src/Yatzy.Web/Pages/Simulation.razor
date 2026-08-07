@@ -1,0 +1,239 @@
+@page "/simulering"
+@implements IDisposable
+@inject OutcomeTreeSolver Solver
+
+<PageTitle>Simulering af hele spil</PageTitle>
+
+<h1>Simulering af hele spil</h1>
+<p class="lead">
+    Her spilles hele partier igennem af en computerspiller, der vælger terninger og slag
+    efter den forventede score. Det viser hvordan sandsynlighederne for de enkelte slag
+    slår igennem på slutresultatet.
+</p>
+
+<div class="card">
+    <div class="toolbar">
+        <label class="field">
+            Antal spil
+            <select value="@_games" @onchange="OnGamesChanged">
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="1000">1.000</option>
+                <option value="5000">5.000</option>
+            </select>
+        </label>
+        <label class="field">
+            Jagter bonus
+            <select value="@_bonusBiasText" @onchange="OnBonusChanged">
+                <option value="0">slet ikke</option>
+                <option value="1">lidt</option>
+                <option value="2">normalt</option>
+                <option value="4">meget</option>
+            </select>
+        </label>
+        <button class="btn btn--primary" disabled="@_running" @onclick="Run">
+            @(_running ? "Spiller ..." : "Kør simulering")
+        </button>
+        @if (_summary is { Games: > 0 })
+        {
+            <span class="muted small">@Format.Integer((long)_summary.ElapsedMilliseconds) ms</span>
+        }
+    </div>
+
+    @if (_running)
+    {
+        <div class="progress"><div style="width:@(_progress)%"></div></div>
+    }
+
+    <p class="small muted" style="margin-bottom:0">
+        Et helt spil kræver at udfaldstræet foldes sammen 15 gange - én gang pr. tur, fordi
+        værdien af en hånd afhænger af hvad der stadig er åbent på blokken. Regn med omkring
+        et kvart sekund pr. 10 spil i browseren; til rigtig store kørsler er kommandolinje-
+        værktøjet <span class="mono">yatzy spil --spil 100000</span> mange gange hurtigere.
+    </p>
+</div>
+
+@if (_summary is { Games: > 0 } summary)
+{
+    <div class="card">
+        <h2>Slutscore</h2>
+        <div class="stat-row">
+            <div class="stat">
+                <div class="stat__label">Spil</div>
+                <div class="stat__value">@Format.Integer(summary.Games)</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Gennemsnit</div>
+                <div class="stat__value">@Format.Number(summary.AverageTotal, 1)</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">± 95 %</div>
+                <div class="stat__value">@Format.Number(1.96 * summary.StandardError, 1)</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Median</div>
+                <div class="stat__value">@Format.Number(summary.MedianTotal, 0)</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Spredning</div>
+                <div class="stat__value">@Format.Number(summary.StandardDeviation, 1)</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Laveste</div>
+                <div class="stat__value">@summary.MinTotal</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Højeste</div>
+                <div class="stat__value">@summary.MaxTotal</div>
+            </div>
+            <div class="stat">
+                <div class="stat__label">Bonus</div>
+                <div class="stat__value">@Format.Percent(summary.BonusRate, 1)</div>
+            </div>
+        </div>
+
+        <h3>Fordeling af slutscoren</h3>
+        <div class="table-scroll">
+            <table>
+                <tbody>
+                    @{
+                        var peak = summary.Histogram.Count > 0 ? summary.Histogram.Max(b => b.Count) : 1;
+                    }
+                    @foreach (var bucket in summary.Histogram)
+                    {
+                        <tr>
+                            <td class="num mono">@bucket.From-@bucket.To</td>
+                            <td style="width:100%">
+                                <span class="bar-track" style="display:block">
+                                    <span class="bar" style="width:@(100.0 * bucket.Count / peak)%"></span>
+                                </span>
+                            </td>
+                            <td class="num muted small">@Format.Integer(bucket.Count)</td>
+                            <td class="num muted small">@Format.Percent((double)bucket.Count / summary.Games, 1)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Slag for slag</h2>
+        <p class="small muted">
+            "Rammer" er hvor ofte slaget gav point i simuleringen. Kolonnen ved siden af er den
+            eksakte sandsynlighed for at slå slaget i en tur hvor man kun går efter netop det slag.
+            Computerspilleren går efter flest point i alt, så den satser ikke altid på det svære
+            slag - derfor er de to tal ikke ens, og forskellen er netop prisen for at spille hele blokken.
+        </p>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Slag</th>
+                        <th class="num">Gns. point</th>
+                        <th class="num">Rammer i simulering</th>
+                        <th class="num">Eksakt, hvis man kun går efter det</th>
+                        <th class="bar-cell"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var category in Categories.All)
+                    {
+                        var hitRate = summary.HitRate[(int)category];
+                        <tr>
+                            <td title="@Categories.Description(category)">@Categories.DanishName(category)</td>
+                            <td class="num">@Format.Number(summary.AverageScore[(int)category], 1)</td>
+                            <td class="num"><strong>@Format.SmartPercent(hitRate)</strong></td>
+                            <td class="num muted">
+                                @Format.SmartPercent(Solver.Solve(category).ProbabilityFromScratch(YatzyRules.RollsPerTurn))
+                            </td>
+                            <td class="bar-cell">
+                                <span class="bar-track" style="display:block">
+                                    <span class="bar" style="width:@(100 * hitRate)%"></span>
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="total">
+                        <td>I alt</td>
+                        <td class="num">@Format.Number(summary.AverageTotal - 100 * summary.BonusRate, 1)</td>
+                        <td colspan="3" class="small muted">
+                            plus @Format.Number(100 * summary.BonusRate, 1) i gennemsnitlig bonus
+                            = @Format.Number(summary.AverageTotal, 1) point
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else if (!_running)
+{
+    <div class="card">
+        <p class="muted">Tryk på "Kør simulering" for at spille en bunke partier igennem.</p>
+    </div>
+}
+
+@code {
+    private GameSimulationSummary? _summary;
+    private int _games = 200;
+    private double _bonusBias = 2;
+    private bool _running;
+    private int _progress;
+    private int _runId;
+    private bool _disposed;
+
+    private string _bonusBiasText = "2";
+
+    private async Task Run()
+    {
+        var runId = ++_runId;
+        _running = true;
+        _progress = 0;
+        _summary = null;
+
+        var simulation = new GameSimulation(bonusBias: _bonusBias);
+        var chunk = System.Math.Max(10, _games / 50);
+
+        while (simulation.Games < _games)
+        {
+            simulation.Run((int)System.Math.Min(chunk, _games - simulation.Games));
+            if (runId != _runId || _disposed)
+            {
+                return;
+            }
+
+            _summary = simulation.Summarize();
+            _progress = (int)(100 * simulation.Games / _games);
+            StateHasChanged();
+            await Task.Delay(1);
+        }
+
+        _running = false;
+        _progress = 100;
+        StateHasChanged();
+    }
+
+    private void OnGamesChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            _games = value;
+        }
+    }
+
+    private void OnBonusChanged(ChangeEventArgs args)
+    {
+        _bonusBiasText = args.Value?.ToString() ?? "2";
+        if (double.TryParse(_bonusBiasText, out var value))
+        {
+            _bonusBias = value;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _runId++;
+    }
+}

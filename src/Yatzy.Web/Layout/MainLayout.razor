@@ -1,0 +1,24 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <header class="topbar">
+        <div class="topbar__inner">
+            <a class="brand" href="">🎲 <span>Yatzy</span></a>
+            <nav class="nav">
+                <NavLink href="" Match="NavLinkMatch.All">Spil</NavLink>
+                <NavLink href="sandsynligheder">Sandsynligheder</NavLink>
+                <NavLink href="udfaldstrae">Udfaldstræ</NavLink>
+                <NavLink href="simulering">Simulering</NavLink>
+                <NavLink href="regler">Regler</NavLink>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        @Body
+    </main>
+
+    <footer>
+        6 terninger · 15 slag · 3 kast pr. tur — sandsynligheder beregnet analytisk, med udfaldstræ og med Monte Carlo.
+    </footer>
+</div>

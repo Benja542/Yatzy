@@ -1,0 +1,354 @@
+@page "/"
+@implements IDisposable
+@inject GameEngine Game
+@inject OutcomeTreeSolver Solver
+
+<PageTitle>Yatzy - spil med sandsynligheder</PageTitle>
+
+<h1>Spil yatzy</h1>
+<p class="lead">
+    Seks terninger, tre kast pr. tur, 15 slag. Under terningerne står sandsynligheden
+    for at nå hvert af de slag du har tilbage - både regnet eksakt på udfaldstræet og
+    estimeret med en simulering.
+</p>
+
+<div class="grid grid--play">
+    <div>
+        <div class="card">
+            <div class="stat-row">
+                <div class="stat">
+                    <div class="stat__label">Tur</div>
+                    <div class="stat__value">@Game.Turn<span class="muted small"> / @YatzyRules.CategoryCount</span></div>
+                </div>
+                <div class="stat">
+                    <div class="stat__label">Kast tilbage</div>
+                    <div class="stat__value">@Game.RollsLeft<span class="muted small"> / @YatzyRules.RollsPerTurn</span></div>
+                </div>
+                <div class="stat">
+                    <div class="stat__label">Score</div>
+                    <div class="stat__value">@Game.Sheet.Total</div>
+                </div>
+            </div>
+
+            <div class="dice-row">
+                @for (var i = 0; i < YatzyRules.DiceCount; i++)
+                {
+                    var index = i;
+                    <Die Value="Game.Dice[index]"
+                         Held="Game.Held[index]"
+                         Clickable="Game.HasRolled && Game.RollsLeft > 0"
+                         OnClick="() => Hold(index)" />
+                }
+            </div>
+
+            <div class="toolbar">
+                <button class="btn btn--primary" disabled="@(!Game.CanRoll)" @onclick="Roll">
+                    @(Game.HasRolled ? "Kast om" : "Kast")
+                </button>
+                <button class="btn" @onclick="NewGame">Nyt spil</button>
+                @if (Game.HasRolled && Game.RollsLeft > 0)
+                {
+                    <span class="muted small">Klik på en terning for at låse den.</span>
+                }
+                @if (Game.IsGameOver)
+                {
+                    <span class="badge badge--hit">Spillet er slut - @Game.Sheet.Total point</span>
+                }
+            </div>
+        </div>
+
+        @if (Game.HasRolled && !Game.IsGameOver)
+        {
+            <div class="card">
+                <h2>Computerens forslag</h2>
+                @if (Game.RollsLeft > 0)
+                {
+                    <p class="small muted">
+                        Forslaget vælger de terninger der giver den højeste forventede score i turen -
+                        samme udfoldning af udfaldstræet som sandsynlighederne, men med point i bladene.
+                    </p>
+                    <div class="toolbar">
+                        <span>Behold</span>
+                        <MiniDice Dice="SuggestedKeep" Kept="true" EmptyText="ingenting - kast alle om" />
+                        <button class="btn btn--tiny" @onclick="UseSuggestedKeep">Brug</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="toolbar">
+                        <span>Skriv hånden i</span>
+                        <strong>@Categories.DanishName(SuggestedCategory)</strong>
+                        <span class="badge">@Game.PotentialScore(SuggestedCategory) point</span>
+                        <button class="btn btn--tiny" @onclick="() => Write(SuggestedCategory)">Skriv</button>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="card">
+            <h2>Sandsynlighed for de slag du har tilbage</h2>
+
+            @if (Game.IsGameOver)
+            {
+                <p class="muted">Blokken er fuld. Start et nyt spil for at se sandsynligheder igen.</p>
+            }
+            else
+            {
+                <p class="small muted">
+                    @if (Game.HasRolled)
+                    {
+                        <text>
+                            Ud fra terningerne på bordet og @Game.RollsLeft omkast tilbage, når du spiller
+                            det pågældende slag så godt som muligt.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>Før første kast: sandsynligheden for at nå slaget i løbet af hele turen.</text>
+                    }
+                </p>
+
+                <div class="toolbar" style="margin-bottom:.6rem">
+                    <label class="field">
+                        Simuleringer pr. slag
+                        <select value="@_trials" @onchange="OnTrialsChanged">
+                            <option value="1000">1.000</option>
+                            <option value="5000">5.000</option>
+                            <option value="25000">25.000</option>
+                            <option value="100000">100.000</option>
+                        </select>
+                    </label>
+                    <button class="btn" disabled="@_running" @onclick="() => RunMonteCarlo()">
+                        @(_running ? "Simulerer ..." : "Kør Monte Carlo igen")
+                    </button>
+                    <label class="small">
+                        <input type="checkbox" checked="@_auto" @onchange="OnAutoChanged" />
+                        kør automatisk efter hvert kast
+                    </label>
+                </div>
+
+                @if (_running)
+                {
+                    <div class="progress"><div style="width:@(_progress)%"></div></div>
+                }
+
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Slag</th>
+                                <th class="num">Point nu</th>
+                                <th class="num" title="Eksakt beregning ved at folde udfaldstræet sammen bagfra">
+                                    Udfaldstræ
+                                </th>
+                                <th class="num" title="Estimat fra tilfældige kast med samme strategi, med 95 % konfidensinterval (Wilson)">
+                                    Monte Carlo
+                                </th>
+                                <th class="num" title="Analytisk formel for ét enkelt kast med alle seks terninger">
+                                    Analytisk<br />1 kast
+                                </th>
+                                <th>Behold</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Rows)
+                            {
+                                <tr>
+                                    <td title="@Categories.Description(row.Category)">
+                                        @Categories.DanishName(row.Category)
+                                        @if (row.AlreadyHit)
+                                        {
+                                            <span class="badge badge--hit" title="Slaget er allerede i hus">i hus</span>
+                                        }
+                                    </td>
+                                    <td class="num">@row.CurrentScore</td>
+                                    <td class="num"><strong>@Format.SmartPercent(row.TreeProbability)</strong></td>
+                                    <td class="num">
+                                        @if (_monteCarlo.TryGetValue(row.Category, out var mc))
+                                        {
+                                            @Format.SmartPercent(mc.Estimate)
+                                            <span class="muted small">± @Format.SmartPercent(mc.MarginOfError)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="muted">-</span>
+                                        }
+                                    </td>
+                                    <td class="num muted" title="@row.Analytic.Probability.ToString()">
+                                        @Format.SmartPercent(row.Analytic.Value)
+                                    </td>
+                                    <td>
+                                        @if (Game.RollsLeft > 0 && Game.HasRolled)
+                                        {
+                                            <MiniDice Dice="row.BestKeep" Kept="true" EmptyText="kast alle om" />
+                                            <button class="btn btn--tiny" @onclick="() => UseKeep(row.BestKeep)">Brug</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="small muted" style="margin-top:.6rem">
+                    "Udfaldstræ" og "Monte Carlo" beskriver den samme hændelse og skal derfor give
+                    samme tal - forskellen er kun simuleringens usikkerhed.
+                    "Analytisk" er den lukkede formel for ét enkelt kast og er derfor et andet - og lavere - tal.
+                    <a href="sandsynligheder">Se hele tabellen og formlerne</a>.
+                </p>
+            }
+        </div>
+    </div>
+
+    <div>
+        <div class="card">
+            <h2>Blokken</h2>
+            <ScoreSheetView Game="Game" OnWrite="Write" />
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly Dictionary<Category, MonteCarloResult> _monteCarlo = [];
+    private readonly AutoPlayer _adviser = new();
+
+    private IReadOnlyList<ProbabilityRow> _rows = [];
+    private long _trials = 5_000;
+    private bool _auto = true;
+    private bool _running;
+    private int _progress;
+    private int _runId;
+    private bool _disposed;
+
+    private IReadOnlyList<ProbabilityRow> Rows => _rows;
+
+    private int[] SuggestedKeep => Game.HasRolled && Game.RollsLeft > 0
+        ? DiceCatalog.ToDice(DiceCatalog.Instance.Keep(_adviser.ChooseKeep(Game.StateId, Game.RollsLeft)))
+        : [];
+
+    private Category SuggestedCategory => Game.HasRolled
+        ? _adviser.ChooseCategory(Game.Counts, Game.Sheet)
+        : Category.Chance;
+
+    protected override void OnInitialized() => Refresh(runMonteCarlo: false);
+
+    private void Roll()
+    {
+        Game.Roll();
+        Refresh();
+    }
+
+    private void Hold(int index)
+    {
+        Game.ToggleHold(index);
+    }
+
+    private void UseKeep(IEnumerable<int> dice)
+    {
+        var counts = new int[YatzyRules.Faces];
+        foreach (var die in dice)
+        {
+            counts[die - 1]++;
+        }
+
+        Game.ApplyKeep(counts);
+    }
+
+    private void UseSuggestedKeep() => UseKeep(SuggestedKeep);
+
+    private void NewGame()
+    {
+        Game.NewGame();
+        Refresh();
+    }
+
+    private void Write(Category category)
+    {
+        Game.Write(category);
+        Refresh();
+    }
+
+    private void Refresh(bool runMonteCarlo = true)
+    {
+        _monteCarlo.Clear();
+
+        if (Game.IsGameOver)
+        {
+            _rows = [];
+            return;
+        }
+
+        _adviser.PlanTurn(Game.Sheet);
+
+        _rows = ProbabilityReport.Build(
+            Game.Sheet.Open,
+            Game.HasRolled ? Game.Counts : null,
+            Game.RerollsLeft);
+
+        if (runMonteCarlo && _auto)
+        {
+            _ = RunMonteCarlo();
+        }
+    }
+
+    /// <summary>
+    /// Kører simuleringen i små portioner med et <c>await</c> imellem, så browseren
+    /// kan nå at tegne fremdriften. Blazor WebAssembly kører på én tråd.
+    /// </summary>
+    private async Task RunMonteCarlo()
+    {
+        var runId = ++_runId;
+        _running = true;
+        _progress = 0;
+        _monteCarlo.Clear();
+
+        var counts = Game.HasRolled ? Game.Counts : null;
+        var rerolls = Game.HasRolled ? Game.RerollsLeft : Game.RerollsLeft - 1;
+        var open = Game.Sheet.Open.ToList();
+        const long chunk = 2_000;
+
+        for (var i = 0; i < open.Count; i++)
+        {
+            var solution = Solver.Solve(open[i]);
+            var estimator = new MonteCarloEstimator(solution, counts, rerolls);
+
+            while (estimator.Trials < _trials)
+            {
+                estimator.Run(System.Math.Min(chunk, _trials - estimator.Trials));
+                if (runId != _runId || _disposed)
+                {
+                    return;
+                }
+
+                _monteCarlo[open[i]] = estimator.Result;
+                _progress = (int)(100.0 * (i + (double)estimator.Trials / _trials) / open.Count);
+                StateHasChanged();
+                await Task.Delay(1);
+            }
+        }
+
+        if (runId == _runId)
+        {
+            _running = false;
+            _progress = 100;
+            StateHasChanged();
+        }
+    }
+
+    private void OnTrialsChanged(ChangeEventArgs args)
+    {
+        if (long.TryParse(args.Value?.ToString(), out var value))
+        {
+            _trials = value;
+            _ = RunMonteCarlo();
+        }
+    }
+
+    private void OnAutoChanged(ChangeEventArgs args) => _auto = args.Value is true;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _runId++;
+    }
+}

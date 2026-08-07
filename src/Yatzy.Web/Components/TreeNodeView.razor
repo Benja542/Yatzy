@@ -1,0 +1,56 @@
+@*
+    En knude i udfaldstræet. Komponenten kalder sig selv rekursivt, ligesom træet.
+*@
+
+<li>
+    <div class="node @(Node.IsHit ? "node--hit" : null) @(IsRoot ? "node--root" : null)">
+        <MiniDice Dice="Node.Dice" />
+
+        @if (!IsRoot)
+        {
+            <span class="badge" title="Sandsynligheden for netop dette udfald">
+                @Format.SmartPercent(Node.BranchProbability)
+            </span>
+        }
+
+        <span class="small">
+            P(slag) =
+            <strong>@Format.SmartPercent(Node.Value)</strong>
+        </span>
+
+        @if (Node.IsHit)
+        {
+            <span class="badge badge--hit">slaget er i hus</span>
+        }
+
+        @if (Node.RerollsLeft > 0)
+        {
+            <span class="small muted">→ behold</span>
+            <MiniDice Dice="Node.Kept" Kept="true" EmptyText="ingenting" />
+            <span class="small muted">og kast @(YatzyRules.DiceCount - Node.Kept.Length) om</span>
+        }
+    </div>
+
+    @if (Node.Children.Count > 0)
+    {
+        <ul>
+            @foreach (var child in Node.Children)
+            {
+                <TreeNodeView Node="child" />
+            }
+            @if (Node.TruncatedChildren > 0)
+            {
+                <li class="small muted" style="padding-left:.5rem">
+                    ... @Format.Integer(Node.TruncatedChildren) andre udfald,
+                    tilsammen @Format.SmartPercent(Node.TruncatedProbability)
+                </li>
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public OutcomeTreeNode Node { get; set; } = default!;
+
+    [Parameter] public bool IsRoot { get; set; }
+}

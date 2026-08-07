@@ -1,0 +1,85 @@
+@*
+    Yatzy-blokken. Åbne slag viser hvad den aktuelle hånd ville give, og kan skrives.
+*@
+
+<table>
+    <thead>
+        <tr>
+            <th>Slag</th>
+            <th class="num">Point</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var category in Categories.Upper)
+        {
+            @RenderRow(category)
+        }
+        <tr class="subtotal">
+            <td>Sum øverst</td>
+            <td class="num">@Game.Sheet.UpperSum</td>
+            <td class="small muted">
+                @if (Game.Sheet.UpperSum >= YatzyRules.BonusThreshold)
+                {
+                    <text>bonus opnået</text>
+                }
+                else if (Game.Sheet.BonusStillPossible)
+                {
+                    <text>@Game.Sheet.PointsToBonus til bonus</text>
+                }
+                else
+                {
+                    <text>bonus tabt</text>
+                }
+            </td>
+        </tr>
+        <tr class="subtotal">
+            <td>Bonus (ved @YatzyRules.BonusThreshold)</td>
+            <td class="num">@Game.Sheet.Bonus</td>
+            <td></td>
+        </tr>
+        @foreach (var category in Categories.All.Where(c => !Categories.IsUpper(c)))
+        {
+            @RenderRow(category)
+        }
+        <tr class="total">
+            <td>I alt</td>
+            <td class="num">@Game.Sheet.Total</td>
+            <td></td>
+        </tr>
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public GameEngine Game { get; set; } = default!;
+
+    [Parameter] public EventCallback<Category> OnWrite { get; set; }
+
+    private RenderFragment RenderRow(Category category) =>
+        @<tr class="@(Game.Sheet.IsFilled(category) ? "filled" : null)">
+            <td title="@Categories.Description(category)">@Categories.DanishName(category)</td>
+            <td class="num">
+                @if (Game.Sheet.IsFilled(category))
+                {
+                    @Game.Sheet[category]
+                }
+                else if (Game.HasRolled)
+                {
+                    <span class="muted">@Game.PotentialScore(category)</span>
+                }
+                else
+                {
+                    <span class="muted">-</span>
+                }
+            </td>
+            <td>
+                @if (!Game.Sheet.IsFilled(category))
+                {
+                    <button type="button" class="btn btn--tiny" disabled="@(!Game.CanWrite)"
+                            @onclick="() => OnWrite.InvokeAsync(category)">
+                        Skriv
+                    </button>
+                }
+            </td>
+        </tr>;
+}

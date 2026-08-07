@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B6698F6D-9C9D-4165-AA61-EF7FCF911DF5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yatzy.Core", "src\Yatzy.Core\Yatzy.Core.csproj", "{898C7A27-C5F7-4852-9AFD-9EC2A022D110}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yatzy.Cli", "src\Yatzy.Cli\Yatzy.Cli.csproj", "{0E099D2F-BAC4-4942-B0AA-F666713C88D1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yatzy.Web", "src\Yatzy.Web\Yatzy.Web.csproj", "{12C44754-BC11-4801-B10C-B50FC0C6DF65}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{AF78E205-7610-443C-823E-40330F976178}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yatzy.Core.Tests", "tests\Yatzy.Core.Tests\Yatzy.Core.Tests.csproj", "{1A0D3659-59F8-43D7-AF9F-01C3550FAE14}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{898C7A27-C5F7-4852-9AFD-9EC2A022D110}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{898C7A27-C5F7-4852-9AFD-9EC2A022D110}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{898C7A27-C5F7-4852-9AFD-9EC2A022D110}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{898C7A27-C5F7-4852-9AFD-9EC2A022D110}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E099D2F-BAC4-4942-B0AA-F666713C88D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E099D2F-BAC4-4942-B0AA-F666713C88D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E099D2F-BAC4-4942-B0AA-F666713C88D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E099D2F-BAC4-4942-B0AA-F666713C88D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12C44754-BC11-4801-B10C-B50FC0C6DF65}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12C44754-BC11-4801-B10C-B50FC0C6DF65}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12C44754-BC11-4801-B10C-B50FC0C6DF65}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12C44754-BC11-4801-B10C-B50FC0C6DF65}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1A0D3659-59F8-43D7-AF9F-01C3550FAE14}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1A0D3659-59F8-43D7-AF9F-01C3550FAE14}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1A0D3659-59F8-43D7-AF9F-01C3550FAE14}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1A0D3659-59F8-43D7-AF9F-01C3550FAE14}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{898C7A27-C5F7-4852-9AFD-9EC2A022D110} = {B6698F6D-9C9D-4165-AA61-EF7FCF911DF5}
+		{0E099D2F-BAC4-4942-B0AA-F666713C88D1} = {B6698F6D-9C9D-4165-AA61-EF7FCF911DF5}
+		{12C44754-BC11-4801-B10C-B50FC0C6DF65} = {B6698F6D-9C9D-4165-AA61-EF7FCF911DF5}
+		{1A0D3659-59F8-43D7-AF9F-01C3550FAE14} = {AF78E205-7610-443C-823E-40330F976178}
+	EndGlobalSection
+EndGlobal
