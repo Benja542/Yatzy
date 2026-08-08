@@ -3,7 +3,7 @@ using Yatzy.Core.Rules;
 namespace Yatzy.Core.Game;
 
 /// <summary>
-/// En yatzy-blok med de 15 slag. Et slag kan skrives én gang - også med 0 point,
+/// En yatzy-blok med de 20 slag. Et slag kan skrives én gang - også med 0 point,
 /// hvis man må strege det ud.
 /// </summary>
 public sealed class ScoreSheet

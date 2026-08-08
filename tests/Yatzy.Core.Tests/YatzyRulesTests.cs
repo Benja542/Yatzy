@@ -35,12 +35,25 @@ public class YatzyRulesTests
     }
 
     [Fact]
+    public void TreParKræverTreForskelligeØjenværdier()
+    {
+        Assert.Equal(24, Score(Category.ThreePairs, 2, 2, 4, 4, 6, 6));
+        Assert.Equal(30, Score(Category.ThreePairs, 4, 4, 5, 5, 6, 6));
+        // 4+2 er kun to forskellige øjenværdier, altså ikke tre par.
+        Assert.Equal(0, Score(Category.ThreePairs, 3, 3, 3, 3, 5, 5));
+        Assert.Equal(0, Score(Category.ThreePairs, 1, 2, 3, 4, 5, 5));
+    }
+
+    [Fact]
     public void TreOgFireEns()
     {
         Assert.Equal(15, Score(Category.ThreeOfAKind, 5, 5, 5, 1, 2, 3));
         Assert.Equal(0, Score(Category.ThreeOfAKind, 5, 5, 1, 1, 2, 3));
         Assert.Equal(24, Score(Category.FourOfAKind, 6, 6, 6, 6, 1, 2));
         Assert.Equal(0, Score(Category.FourOfAKind, 6, 6, 6, 1, 1, 2));
+        Assert.Equal(25, Score(Category.FiveOfAKind, 5, 5, 5, 5, 5, 2));
+        Assert.Equal(30, Score(Category.FiveOfAKind, 6, 6, 6, 6, 6, 6));
+        Assert.Equal(0, Score(Category.FiveOfAKind, 6, 6, 6, 6, 1, 1));
     }
 
     [Fact]
@@ -53,19 +66,44 @@ public class YatzyRulesTests
         Assert.Equal(20, Score(Category.LargeStraight, 2, 3, 4, 5, 6, 6));
         Assert.Equal(20, Score(Category.LargeStraight, 1, 2, 3, 4, 5, 6));
         Assert.Equal(0, Score(Category.LargeStraight, 1, 2, 3, 4, 5, 5));
+
+        // Fuld straight kræver alle seks øjenværdier - altså præcis én af hver.
+        Assert.Equal(21, Score(Category.FullStraight, 1, 2, 3, 4, 5, 6));
+        Assert.Equal(0, Score(Category.FullStraight, 1, 2, 3, 4, 5, 5));
+        Assert.Equal(0, Score(Category.FullStraight, 2, 3, 4, 5, 6, 6));
     }
 
     [Fact]
-    public void FuldtHusVælgerDenBedsteKombination()
+    public void HusVælgerDenBedsteKombination()
     {
-        Assert.Equal(28, Score(Category.FullHouse, 6, 6, 6, 5, 5, 1));
+        Assert.Equal(28, Score(Category.House, 6, 6, 6, 5, 5, 1));
         // 3+3: tre seksere plus et par femmere betaler bedst.
-        Assert.Equal(28, Score(Category.FullHouse, 5, 5, 5, 6, 6, 6));
+        Assert.Equal(28, Score(Category.House, 5, 5, 5, 6, 6, 6));
         // 4+2 tæller også - tre af de fire ens plus parret.
-        Assert.Equal(16, Score(Category.FullHouse, 2, 2, 2, 2, 5, 5));
-        Assert.Equal(0, Score(Category.FullHouse, 3, 3, 3, 1, 2, 4));
-        // Seks ens er ikke et fuldt hus - parret skal have en anden øjenværdi.
-        Assert.Equal(0, Score(Category.FullHouse, 4, 4, 4, 4, 4, 4));
+        Assert.Equal(16, Score(Category.House, 2, 2, 2, 2, 5, 5));
+        Assert.Equal(0, Score(Category.House, 3, 3, 3, 1, 2, 4));
+        // Seks ens er ikke et hus - parret skal have en anden øjenværdi.
+        Assert.Equal(0, Score(Category.House, 4, 4, 4, 4, 4, 4));
+    }
+
+    [Fact]
+    public void VillaErTreEnsPlusTreEns()
+    {
+        Assert.Equal(33, Score(Category.Villa, 5, 5, 5, 6, 6, 6));
+        Assert.Equal(9, Score(Category.Villa, 1, 1, 1, 2, 2, 2));
+        // 4+2 rækker ikke - den anden gruppe skal være tre ens.
+        Assert.Equal(0, Score(Category.Villa, 3, 3, 3, 3, 5, 5));
+        Assert.Equal(0, Score(Category.Villa, 4, 4, 4, 4, 4, 4));
+    }
+
+    [Fact]
+    public void TårnErFireEnsPlusEtPar()
+    {
+        Assert.Equal(34, Score(Category.Tower, 6, 6, 6, 6, 5, 5));
+        Assert.Equal(16, Score(Category.Tower, 2, 2, 2, 2, 4, 4));
+        // Fem ens plus én terning giver ikke et par til toppen af tårnet.
+        Assert.Equal(0, Score(Category.Tower, 6, 6, 6, 6, 6, 3));
+        Assert.Equal(0, Score(Category.Tower, 3, 3, 3, 5, 5, 5));
     }
 
     [Fact]
@@ -90,6 +128,27 @@ public class YatzyRulesTests
         {
             var counts = YatzyRules.CountFaces([1, 2, 3, 4, 5, 6]);
             Assert.Equal(YatzyRules.Score(category, counts) > 0, YatzyRules.IsHit(category, counts));
+        }
+    }
+
+    [Fact]
+    public void BlokkenHar20Slag()
+    {
+        Assert.Equal(20, YatzyRules.CategoryCount);
+        Assert.Equal(YatzyRules.CategoryCount, Categories.All.Length);
+        Assert.Equal(YatzyRules.CategoryCount, Categories.All.Distinct().Count());
+        // Alle enum-værdier skal være med på blokken.
+        Assert.Equal(Enum.GetValues<Category>().OrderBy(c => c), Categories.All.OrderBy(c => c));
+    }
+
+    [Fact]
+    public void AlleSlagHarNavnOgBeskrivelse()
+    {
+        foreach (var category in Categories.All)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(Categories.DanishName(category)));
+            Assert.False(string.IsNullOrWhiteSpace(Categories.Description(category)));
+            Assert.True(Categories.MaxScore(category) > 0);
         }
     }
 

@@ -193,7 +193,7 @@ public class MultiplayerTests
 
         Assert.Equal(annasScore, game.Players[0].Sheet[Category.Chance]);
         Assert.Null(game.Players[1].Sheet[Category.Chance]);
-        // Bo har alle 15 slag åbne selvom Anna har skrevet et.
+        // Bo har alle 20 slag åbne selvom Anna har skrevet et.
         Assert.Equal(YatzyRules.CategoryCount, game.Players[1].Sheet.OpenCount);
     }
 
@@ -312,6 +312,22 @@ public class AutoPlayerTests
         var second = new AutoPlayer().PlayGame(new Random(11));
         Assert.Equal(first.Total, second.Total);
         Assert.Equal(first.Scores, second.Scores);
+    }
+
+    [Fact]
+    public void OfringsrækkefølgenDækkerAlleSlag()
+    {
+        // Hvis et slag mangler, kan computeren ende uden noget at skrive i.
+        var player = new AutoPlayer();
+        var sheet = new ScoreSheet();
+        foreach (var category in Categories.All.Take(Categories.All.Length - 1))
+        {
+            sheet.Write(category, 0);
+        }
+
+        // Hånden 1-1-1-1-1-2 giver intet i det sidste slag (yatzy), så der skal ofres.
+        int[] counts = [5, 1, 0, 0, 0, 0];
+        Assert.Equal(Categories.All[^1], player.ChooseCategory(counts, sheet));
     }
 
     [Fact]

@@ -6,7 +6,7 @@ namespace Yatzy.Core.Game;
 /// <summary>
 /// Resultatet af ét simuleret spil.
 /// </summary>
-/// <param name="Scores">Scoren i hvert af de 15 slag, indekseret efter <see cref="Category"/>.</param>
+/// <param name="Scores">Scoren i hvert af de 20 slag, indekseret efter <see cref="Category"/>.</param>
 /// <param name="UpperSum">Summen af den øverste del.</param>
 /// <param name="Bonus">Bonus (0 eller 100).</param>
 /// <param name="Total">Samlet score.</param>
@@ -27,7 +27,7 @@ public sealed record GameResult(int[] Scores, int UpperSum, int Bonus, int Total
 /// Værdien af en hånd justeres med et bonus-incitament: for de øverste slag tæller
 /// point ud over "fire ens af øjenværdien" ekstra, fordi netop de point er dem der
 /// bringer én over de 84 point. Det er en heuristik - ikke en optimal løsning af hele
-/// spillet, som ville kræve en tilstandsrum på 2^15 blokke gange bonus-status.
+/// spillet, som ville kræve et tilstandsrum på 2^20 blokke gange bonus-status.
 /// </para>
 /// </remarks>
 public sealed class AutoPlayer
@@ -35,9 +35,11 @@ public sealed class AutoPlayer
     /// <summary>Rækkefølgen slag ofres i, når intet giver point.</summary>
     private static readonly Category[] SacrificeOrder =
     [
-        Category.Yatzy, Category.LargeStraight, Category.SmallStraight, Category.FourOfAKind,
-        Category.FullHouse, Category.Ones, Category.TwoPairs, Category.Twos, Category.ThreeOfAKind,
-        Category.Threes, Category.OnePair, Category.Fours, Category.Fives, Category.Sixes, Category.Chance,
+        Category.Yatzy, Category.FullStraight, Category.Villa, Category.Tower,
+        Category.FiveOfAKind, Category.ThreePairs, Category.LargeStraight, Category.SmallStraight,
+        Category.FourOfAKind, Category.House, Category.Ones, Category.TwoPairs,
+        Category.Twos, Category.ThreeOfAKind, Category.Threes, Category.OnePair,
+        Category.Fours, Category.Fives, Category.Sixes, Category.Chance,
     ];
 
     private readonly DiceCatalog _catalog = DiceCatalog.Instance;
@@ -64,7 +66,7 @@ public sealed class AutoPlayer
         }
     }
 
-    /// <summary>Spiller ét helt spil på 15 ture.</summary>
+    /// <summary>Spiller ét helt spil på 20 runder.</summary>
     public GameResult PlayGame(Random random)
     {
         var sheet = new ScoreSheet();

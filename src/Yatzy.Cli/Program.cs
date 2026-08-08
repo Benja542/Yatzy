@@ -42,7 +42,7 @@ public static class Program
     private static void PrintHelp()
     {
         Console.WriteLine("""
-            Yatzy - 6 terninger, 15 slag, 3 kast pr. tur
+            Yatzy - 6 terninger, 20 slag, 3 kast pr. tur
 
             Brug:
               yatzy tabel [--kast N]     Sandsynlighed for hvert slag: analytisk, udfaldstræ og Monte Carlo

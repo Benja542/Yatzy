@@ -39,7 +39,12 @@ public class AnalyticProbabilityTests
     [InlineData(Category.FourOfAKind, "203/3888")] //  2436/46656
     [InlineData(Category.SmallStraight, "35/648")] //  2520/46656
     [InlineData(Category.LargeStraight, "35/648")] //  2520/46656
-    [InlineData(Category.FullHouse, "1325/7776")]  //  7950/46656
+    [InlineData(Category.ThreePairs, "25/648")]    //  1800/46656
+    [InlineData(Category.FiveOfAKind, "31/7776")]  //   186/46656
+    [InlineData(Category.FullStraight, "5/324")]   //   720/46656
+    [InlineData(Category.House, "1325/7776")]      //  7950/46656
+    [InlineData(Category.Villa, "25/3888")]        //   300/46656
+    [InlineData(Category.Tower, "25/2592")]        //   450/46656
     [InlineData(Category.Yatzy, "1/7776")]         //     6/46656
     [InlineData(Category.Chance, "1")]
     public void SandsynlighederneErDeForventedeBrøker(Category category, string expected) =>
@@ -289,7 +294,7 @@ public class OutcomeTreeTests
     [Fact]
     public void TræetsRodVærdiPasserMedTabellen()
     {
-        var solution = _solver.Solve(Category.FullHouse);
+        var solution = _solver.Solve(Category.House);
         var stateId = _catalog.FullStateIdFromDice([3, 3, 3, 5, 1, 2]);
         Assert.Equal(solution.Probability(stateId, 2), solution.BuildTree(stateId, 2).Value, 12);
     }
@@ -302,16 +307,45 @@ public class MonteCarloTests
     [Fact]
     public void SimuleringenRammerDenEksakteVærdi()
     {
-        // Med 200.000 forsøg pr. slag skal den eksakte værdi ligge inden for
-        // konfidensintervallet. Fast frø, så testen ikke er flaky.
+        // Estimatet skal ligge inden for fire standardfejl af den eksakte værdi.
+        // Vi bruger ikke 95 %-intervallet her: det rammer per definition forbi i ca.
+        // 1 af 20 tilfælde, og med 20 slag ville testen så fejle i godt hver tredje
+        // kørsel. Fire standardfejl svarer til ca. 1 fejl ud af 16.000.
         foreach (var category in Categories.All)
         {
             var solution = _solver.Solve(category);
             var exact = solution.ProbabilityFromScratch(YatzyRules.RollsPerTurn);
             var result = MonteCarloEstimator.EstimateFromScratch(solution, YatzyRules.RollsPerTurn, 200_000, seed: 20240607);
 
-            Assert.InRange(exact, result.LowerBound, result.UpperBound);
+            var deviation = System.Math.Abs(result.Estimate - exact);
+            var tolerance = 4 * result.StandardError + 1e-4;
+
+            Assert.True(
+                deviation <= tolerance,
+                $"{Categories.DanishName(category)}: simulering {result.Estimate:P4}, " +
+                $"eksakt {exact:P4}, afvigelse {deviation:P4} > {tolerance:P4}");
         }
+    }
+
+    [Fact]
+    public void KonfidensintervallerneDækkerNæstenAlleSlag()
+    {
+        // Et 95 %-interval skal dække den eksakte værdi for de allerfleste slag.
+        // Vi tillader et par afvigere, netop fordi intervallet er 95 % og ikke 100 %.
+        var covered = 0;
+        foreach (var category in Categories.All)
+        {
+            var solution = _solver.Solve(category);
+            var exact = solution.ProbabilityFromScratch(YatzyRules.RollsPerTurn);
+            var result = MonteCarloEstimator.EstimateFromScratch(solution, YatzyRules.RollsPerTurn, 200_000, seed: 20240607);
+
+            if (exact >= result.LowerBound && exact <= result.UpperBound)
+            {
+                covered++;
+            }
+        }
+
+        Assert.True(covered >= Categories.All.Length - 3, $"kun {covered} af {Categories.All.Length} slag var dækket");
     }
 
     [Fact]

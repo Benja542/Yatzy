@@ -44,11 +44,12 @@ public sealed record AnalyticResult(
 /// <b>Komplementærreglen</b> for de øverste slag: P(mindst én sekser) = 1 − (5/6)^6.
 /// </description></item>
 /// <item><description>
-/// <b>Inklusion-eksklusion</b> for de to straights: antallet af kast hvor alle fem
-/// krævede øjenværdier er til stede er Σ (−1)^j · C(5,j) · (6−j)^6.
+/// <b>Inklusion-eksklusion</b> for de tre straights: antallet af kast hvor alle de
+/// krævede øjenværdier er til stede er Σ (−1)^j · C(m,j) · (6−j)^6, hvor m er antallet
+/// af krævede øjenværdier (5 for lille og stor straight, 6 for fuld straight).
 /// </description></item>
 /// <item><description>
-/// <b>Optælling over partitioner</b> for par, ens og fuldt hus: hvert kast har en
+/// <b>Optælling over partitioner</b> for par, ens, hus, villa og tårn: hvert kast har en
 /// "form" (fx 4+2 eller 2+2+1+1), og antallet af kast med en given form er
 /// antallet af måder at fordele øjenværdier på gange multinomialkoefficienten.
 /// </description></item>
@@ -62,7 +63,7 @@ public static class AnalyticProbability
     /// <summary>Antal mulige (ordnede) udfald af ét kast med seks terninger: 6^6 = 46.656.</summary>
     public static long TotalOutcomes { get; } = Pow(Faces, DiceCount);
 
-    /// <summary>Beregner sandsynligheden for alle 15 slag.</summary>
+    /// <summary>Beregner sandsynligheden for alle 20 slag.</summary>
     public static IReadOnlyList<AnalyticResult> All() => Categories.All.Select(Compute).ToList();
 
     /// <summary>Beregner sandsynligheden for ét slag.</summary>
@@ -72,6 +73,7 @@ public static class AnalyticProbability
             or Category.Fours or Category.Fives or Category.Sixes => Upper(category),
         Category.SmallStraight => Straight(category, 1, 5),
         Category.LargeStraight => Straight(category, 2, 6),
+        Category.FullStraight => Straight(category, 1, 6),
         Category.Chance => Certain(category),
         _ => ByShape(category),
     };
@@ -178,9 +180,15 @@ public static class AnalyticProbability
     {
         Category.OnePair => shape[0] >= 2,
         Category.TwoPairs => shape.Count(part => part >= 2) >= 2,
+        Category.ThreePairs => shape.Count(part => part >= 2) >= 3,
         Category.ThreeOfAKind => shape[0] >= 3,
         Category.FourOfAKind => shape[0] >= 4,
-        Category.FullHouse => shape[0] >= 3 && shape.Length >= 2 && shape[1] >= 2,
+        Category.FiveOfAKind => shape[0] >= 5,
+        // Hus, villa og tårn kræver to grupper med forskellig øjenværdi. Formen er
+        // sorteret faldende, så det er nok at se på de to største dele.
+        Category.House => shape[0] >= 3 && shape.Length >= 2 && shape[1] >= 2,
+        Category.Villa => shape[0] >= 3 && shape.Length >= 2 && shape[1] >= 3,
+        Category.Tower => shape[0] >= 4 && shape.Length >= 2 && shape[1] >= 2,
         Category.Yatzy => shape[0] >= DiceCount,
         _ => throw new ArgumentOutOfRangeException(
             nameof(category), category, "Slaget afhænger ikke kun af kastets form."),

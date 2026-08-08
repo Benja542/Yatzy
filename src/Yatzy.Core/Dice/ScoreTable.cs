@@ -3,11 +3,11 @@ using Yatzy.Core.Rules;
 namespace Yatzy.Core.Dice;
 
 /// <summary>
-/// Scoren for hvert af de 15 slag i hver af de 462 mulige hænder - regnet ud én gang
+/// Scoren for hvert af de 20 slag i hver af de 462 mulige hænder - regnet ud én gang
 /// og slået op siden.
 /// </summary>
 /// <remarks>
-/// Tabellen fylder 462 · 15 = 6.930 tal, men sparer millioner af kald til
+/// Tabellen fylder 462 · 20 = 9.240 tal, men sparer millioner af kald til
 /// <see cref="YatzyRules.Score"/> når der simuleres hele spil. Det er den eneste grund
 /// til at den findes.
 /// </remarks>

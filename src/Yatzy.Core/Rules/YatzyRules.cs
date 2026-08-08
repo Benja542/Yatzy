@@ -1,8 +1,8 @@
 namespace Yatzy.Core.Rules;
 
 /// <summary>
-/// Reglerne for den variant der spilles her: <b>6 terninger</b>, <b>15 slag</b>,
-/// <b>3 kast pr. tur</b> og traditionel pointgivning.
+/// Reglerne for den variant der spilles her: <b>6 terninger</b>, <b>20 slag</b>
+/// (maxi-yatzyblokken), <b>3 kast pr. tur</b> og traditionel pointgivning.
 /// </summary>
 /// <remarks>
 /// Terningerne repræsenteres altid som et "tællevektor"-array med 6 pladser,
@@ -21,8 +21,8 @@ public static class YatzyRules
     /// <summary>Antal kast pr. tur (første kast + to omkast).</summary>
     public const int RollsPerTurn = 3;
 
-    /// <summary>Antal slag på blokken - og dermed antal ture i et spil.</summary>
-    public const int CategoryCount = 15;
+    /// <summary>Antal slag på blokken - og dermed antal runder i et spil.</summary>
+    public const int CategoryCount = 20;
 
     /// <summary>Point-grænsen i den øverste del for at få bonus (4 af hver øjenværdi).</summary>
     public const int BonusThreshold = 84;
@@ -39,6 +39,9 @@ public static class YatzyRules
     /// <summary>Point for stor straight (2-3-4-5-6).</summary>
     public const int LargeStraightPoints = 20;
 
+    /// <summary>Point for fuld straight (1-2-3-4-5-6).</summary>
+    public const int FullStraightPoints = 21;
+
     /// <summary>Beregner scoren for et slag ud fra en tællevektor. Giver 0 hvis slaget ikke er opfyldt.</summary>
     public static int Score(Category category, ReadOnlySpan<int> counts)
     {
@@ -53,12 +56,17 @@ public static class YatzyRules
                 or Category.Fours or Category.Fives or Category.Sixes
                 => UpperScore(category, counts),
             Category.OnePair => NOfAKindScore(counts, 2),
-            Category.TwoPairs => TwoPairsScore(counts),
+            Category.TwoPairs => PairsScore(counts, 2),
+            Category.ThreePairs => PairsScore(counts, 3),
             Category.ThreeOfAKind => NOfAKindScore(counts, 3),
             Category.FourOfAKind => NOfAKindScore(counts, 4),
+            Category.FiveOfAKind => NOfAKindScore(counts, 5),
             Category.SmallStraight => HasFaces(counts, 1, 5) ? SmallStraightPoints : 0,
             Category.LargeStraight => HasFaces(counts, 2, 6) ? LargeStraightPoints : 0,
-            Category.FullHouse => FullHouseScore(counts),
+            Category.FullStraight => HasFaces(counts, 1, 6) ? FullStraightPoints : 0,
+            Category.House => TwoGroupsScore(counts, 3, 2),
+            Category.Villa => TwoGroupsScore(counts, 3, 3),
+            Category.Tower => TwoGroupsScore(counts, 4, 2),
             Category.Chance => PipSum(counts),
             Category.Yatzy => NOfAKindScore(counts, 6) > 0 ? YatzyPoints : 0,
             _ => throw new ArgumentOutOfRangeException(nameof(category), category, "Ukendt slag."),
@@ -137,53 +145,50 @@ public static class YatzyRules
         return 0;
     }
 
-    private static int TwoPairsScore(ReadOnlySpan<int> counts)
+    /// <summary>
+    /// To eller tre par. Parrene skal have <b>forskellig</b> øjenværdi - fire ens tæller
+    /// altså kun som ét par. De højeste par vælges.
+    /// </summary>
+    private static int PairsScore(ReadOnlySpan<int> counts, int pairs)
     {
-        var first = 0;
-        var second = 0;
-        for (var face = Faces; face >= 1; face--)
-        {
-            if (counts[face - 1] < 2)
-            {
-                continue;
-            }
+        var sum = 0;
+        var found = 0;
 
-            if (first == 0)
+        for (var face = Faces; face >= 1 && found < pairs; face--)
+        {
+            if (counts[face - 1] >= 2)
             {
-                first = face;
-            }
-            else
-            {
-                second = face;
-                break;
+                sum += 2 * face;
+                found++;
             }
         }
 
-        return second == 0 ? 0 : 2 * (first + second);
+        return found == pairs ? sum : 0;
     }
 
     /// <summary>
-    /// Fuldt hus: tre ens plus et par med en anden øjenværdi. Med seks terninger kan
-    /// der være flere muligheder (fx 3+3), så den bedst betalende kombination vælges.
+    /// Slagene der består af to grupper med forskellig øjenværdi: hus (3+2),
+    /// villa (3+3) og tårn (4+2). Med seks terninger kan der være flere gyldige
+    /// opdelinger, så den bedst betalende vælges.
     /// </summary>
-    private static int FullHouseScore(ReadOnlySpan<int> counts)
+    private static int TwoGroupsScore(ReadOnlySpan<int> counts, int first, int second)
     {
         var best = 0;
-        for (var triple = 1; triple <= Faces; triple++)
+        for (var a = 1; a <= Faces; a++)
         {
-            if (counts[triple - 1] < 3)
+            if (counts[a - 1] < first)
             {
                 continue;
             }
 
-            for (var pair = 1; pair <= Faces; pair++)
+            for (var b = 1; b <= Faces; b++)
             {
-                if (pair == triple || counts[pair - 1] < 2)
+                if (b == a || counts[b - 1] < second)
                 {
                     continue;
                 }
 
-                best = System.Math.Max(best, 3 * triple + 2 * pair);
+                best = System.Math.Max(best, first * a + second * b);
             }
         }
 

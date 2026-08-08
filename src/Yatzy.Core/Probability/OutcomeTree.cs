@@ -219,7 +219,7 @@ public sealed class OutcomeTreeSolver
     public CategorySolution Solve(Category category, int maxRerolls = YatzyRules.RollsPerTurn) =>
         _cache.GetOrAdd((category, maxRerolls), key => Compute(key.Category, key.MaxRerolls));
 
-    /// <summary>Løser alle 15 slag.</summary>
+    /// <summary>Løser alle 20 slag.</summary>
     public IReadOnlyDictionary<Category, CategorySolution> SolveAll(int maxRerolls = YatzyRules.RollsPerTurn) =>
         Categories.All.ToDictionary(category => category, category => Solve(category, maxRerolls));
 

@@ -10,7 +10,7 @@ namespace Yatzy.Core.Game;
 /// <remarks>
 /// Spillerne skiftes til at tage en tur. Når en spiller har skrevet sit slag, går turen
 /// videre til den næste, terningerne ryddes, og der er tre nye kast. Spillet er slut når
-/// alle spillere har fyldt deres blok - altså efter 15 runder.
+/// alle spillere har fyldt deres blok - altså efter 20 runder.
 /// </remarks>
 public sealed class GameEngine
 {
@@ -55,8 +55,8 @@ public sealed class GameEngine
     public IReadOnlyList<bool> Held => _held;
 
     /// <summary>
-    /// Rundenummer for den spiller der har tur, 1-15. Når blokken er fuld bliver den
-    /// stående på 15 i stedet for at løbe videre til 16.
+    /// Rundenummer for den spiller der har tur, 1-20. Når blokken er fuld bliver den
+    /// stående på 20 i stedet for at løbe videre til 21.
     /// </summary>
     public int Turn => System.Math.Min(
         YatzyRules.CategoryCount,

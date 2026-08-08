@@ -1,6 +1,7 @@
 # Yatzy — spil, simulering og sandsynligheder
 
-En C#-løsning der spiller yatzy med **6 terninger** og **15 slag**, og som viser
+En C#-løsning der spiller yatzy med **6 terninger** og **20 slag** (maxi-yatzyblokken),
+og som viser
 sandsynligheden for at slå hvert af de slag man har tilbage — beregnet på **tre**
 forskellige måder:
 
@@ -17,7 +18,7 @@ til sidste decimal), og simuleringen kontrollerer dem begge.
 
 ```bash
 dotnet run --project src/Yatzy.Web        # brugerfladen — åbn adressen der skrives i konsollen
-dotnet test                               # 90 enhedstests
+dotnet test                               # 102 enhedstests
 ```
 
 Kommandolinjeværktøjet er til de tunge kørsler, hvor browseren bliver for langsom:
@@ -49,7 +50,7 @@ Blazor WebAssembly — alt regnes i browseren, der er ingen server.
 ## Reglerne der spilles med
 
 Seks terninger, tre kast pr. tur (første kast plus to omkast hvor man selv vælger
-hvilke terninger der bliver liggende), 15 slag og dermed 15 runder. Efter tredje kast
+hvilke terninger der bliver liggende), 20 slag og dermed 20 runder. Efter tredje kast
 skal hånden skrives — også hvis den giver 0 point.
 
 Der kan være **1-6 spillere**. De har hver deres kolonne på blokken og skiftes til at
@@ -57,22 +58,38 @@ tage en tur: når en spiller har skrevet sit slag, ryddes terningerne, og den n�
 spiller har tre nye kast. Spillet er slut når alle har fyldt deres blok, og den med
 flest point vinder — er der lige mange point, deles førstepladsen.
 
-| Slag | Krav | Point |
-| --- | --- | --- |
-| Enere … Seksere | Mindst én terning med øjenværdien | Summen af dem |
-| Et par | To ens | Summen af de to |
-| To par | To par med forskellig øjenværdi | Summen af de fire |
-| Tre ens / Fire ens | Tre eller fire ens | Summen af dem |
-| Lille straight | 1-2-3-4-5 blandt de seks terninger | 15 |
-| Stor straight | 2-3-4-5-6 blandt de seks terninger | 20 |
-| Fuldt hus | Tre ens + et par med anden øjenværdi | Summen af de fem |
-| Chance | — | Summen af alle seks |
-| Yatzy | Seks ens | 100 |
+| Slag | Krav | Point | Højest mulige |
+| --- | --- | --- | ---: |
+| Enere … Seksere | Mindst én terning med øjenværdien | Summen af dem | 6 … 36 |
+| Et par | To ens | Summen af de to | 12 |
+| To par | To par med forskellig øjenværdi | Summen af de fire | 22 |
+| Tre par | Tre par med forskellig øjenværdi | Summen af alle seks | 30 |
+| Tre ens | Tre ens | Summen af de tre | 18 |
+| Fire ens | Fire ens | Summen af de fire | 24 |
+| Fem ens | Fem ens | Summen af de fem | 30 |
+| Lille straight | 1-2-3-4-5 blandt de seks terninger | 15 | 15 |
+| Stor straight | 2-3-4-5-6 blandt de seks terninger | 20 | 20 |
+| Fuld straight | 1-2-3-4-5-6 — alle seks øjenværdier | 21 | 21 |
+| Hus | Tre ens + et par med anden øjenværdi | Summen af de fem | 28 |
+| Villa | Tre ens + tre ens med forskellig øjenværdi | Summen af alle seks | 33 |
+| Tårn | Fire ens + et par med anden øjenværdi | Summen af alle seks | 34 |
+| Chance | — | Summen af alle seks | 36 |
+| Yatzy | Seks ens | 100 | 100 |
 
 **Bonus:** 100 point hvis de seks øverste slag tilsammen giver mindst 84 — det svarer
 til fire terninger af hver øjenværdi (4·1 + 4·2 + … + 4·6 = 84). Grænsen er sat efter
 antallet af terninger, ligesom den velkendte 63-grænse i 5-terningers-yatzy svarer til
 tre af hver.
+
+To steder hvor blokke er uenige med hinanden, og hvad der er valgt her:
+
+* **Par skal have forskellig øjenværdi.** Fire ens tæller altså som ét par, ikke to,
+  så 3-3-3-3-5-5 giver 0 i både to par og tre par. (Nogle regelsæt lader fire ens
+  tælle som to par.)
+* **Villa er 3+3 og tårn er 4+2**, begge med forskellig øjenværdi. Et hus (3+2) må
+  gerne tages fra fire ens — 2-2-2-2-5-5 giver 16 i hus.
+
+Begge dele sidder ét sted, i `YatzyRules.Score`, og er dækket af testene.
 
 ## Sådan regnes der
 
@@ -82,15 +99,17 @@ tre af hver.
 med tre klassiske teknikker:
 
 * **Komplementærreglen** for de øverste slag: P(mindst én sekser) = 1 − (5/6)⁶ = 31031/46656.
-* **Inklusion-eksklusion** for de to straights:
-  Σ<sub>j=0..5</sub> (−1)<sup>j</sup> · C(5,j) · (6−j)⁶ = 2520, altså 35/648.
-* **Optælling over partitioner** for par, ens og fuldt hus. Hvert kast har en "form" —
+* **Inklusion-eksklusion** for de tre straights:
+  Σ<sub>j=0..m</sub> (−1)<sup>j</sup> · C(m,j) · (6−j)⁶, hvor m er antallet af krævede
+  øjenværdier. For lille og stor straight (m = 5) giver det 2520, altså 35/648;
+  for fuld straight (m = 6) giver det 720 = 6!, altså 5/324.
+* **Optælling over partitioner** for par, ens, hus, villa og tårn. Hvert kast har en "form" —
   en partition af 6, fx `4+2` eller `2+2+1+1` — og antallet af kast med formen λ er
   `6!/((6−k)!·∏mⱼ!) · 6!/∏λᵢ!`. De 11 partitioner af 6 dækker tilsammen præcis alle
   46.656 udfald, hvilket testene også tjekker.
 
 Resultatet regnes i `Fraction` (BigInteger-brøker), så tabellen kan vise fx `1325/7776`
-uden afrundingsfejl. Alle 15 formler efterprøves i testene mod en optælling af samtlige
+uden afrundingsfejl. Alle 20 formler efterprøves i testene mod en optælling af samtlige
 46.656 udfald.
 
 ### 2. Udfaldstræ (`OutcomeTreeSolver`)
@@ -129,8 +148,8 @@ hel tur).
 Samme udfoldning af træet som ovenfor, men med point i bladene i stedet for 0/1, og med
 et bonus-incitament: for de øverste slag tæller point ud over "fire ens af øjenværdien"
 ekstra. Det er en heuristik, ikke en optimal løsning af hele spillet — den ville kræve
-et tilstandsrum på 2¹⁵ blokke gange bonus-status. Med standardindstillingerne giver den
-omkring **254 point** i gennemsnit og rammer bonussen i ca. **25 %** af spillene.
+et tilstandsrum på 2²⁰ blokke gange bonus-status. Med standardindstillingerne giver den
+omkring **340 point** i gennemsnit og rammer bonussen i ca. **29 %** af spillene.
 
 ## Nogle af tallene
 
@@ -142,11 +161,16 @@ går efter netop det slag:
 | Enere … Seksere | 66,51 % | 31031/46656 | 96,24 % |
 | Et par | 98,46 % | 319/324 | 100,00 % |
 | To par | 55,62 % | 4325/7776 | 94,87 % |
+| Tre par | 3,86 % | 25/648 | 27,26 % |
 | Tre ens | 36,73 % | 119/324 | 88,87 % |
 | Fire ens | 5,22 % | 203/3888 | 50,11 % |
+| Fem ens | 0,399 % | 31/7776 | 15,72 % |
 | Lille straight | 5,40 % | 35/648 | 43,72 % |
 | Stor straight | 5,40 % | 35/648 | 43,72 % |
-| Fuldt hus | 17,04 % | 1325/7776 | 76,14 % |
+| Fuld straight | 1,54 % | 5/324 | 19,68 % |
+| Hus | 17,04 % | 1325/7776 | 76,14 % |
+| Villa | 0,643 % | 25/3888 | 16,26 % |
+| Tårn | 0,965 % | 25/2592 | 19,49 % |
 | Chance | 100 % | 1 | 100,00 % |
 | Yatzy | 0,0129 % | 1/7776 | 2,05 % |
 
@@ -161,7 +185,7 @@ src/Yatzy.Core    Regler, terningekatalog, de tre sandsynlighedsmodeller,
                   spillere og turskifte, computerspiller
 src/Yatzy.Web     Blazor WebAssembly-brugerfladen
 src/Yatzy.Cli     Kommandolinjeværktøj til store kørsler
-tests/            90 enhedstests
+tests/            102 enhedstests
 ```
 
 ## Udgivelse til GitHub Pages

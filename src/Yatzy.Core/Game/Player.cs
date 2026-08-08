@@ -13,7 +13,7 @@ public sealed class Player
     /// <summary>Spillerens blok.</summary>
     public ScoreSheet Sheet { get; private set; } = new();
 
-    /// <summary>Har spilleren skrevet alle 15 slag?</summary>
+    /// <summary>Har spilleren skrevet alle 20 slag?</summary>
     public bool IsDone => Sheet.IsComplete;
 
     /// <summary>Rydder blokken - bruges når der startes et nyt spil.</summary>
