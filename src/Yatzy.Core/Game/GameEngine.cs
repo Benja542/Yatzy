@@ -4,16 +4,49 @@ using Yatzy.Core.Rules;
 namespace Yatzy.Core.Game;
 
 /// <summary>
-/// Spillets tilstand for én spiller: terningerne på bordet, hvilke der er låst,
-/// hvor mange kast der er tilbage, og blokken.
+/// Spillets tilstand: spillerne og deres blokke, terningerne på bordet, hvilke der er
+/// låst, og hvor mange kast der er tilbage i turen.
 /// </summary>
+/// <remarks>
+/// Spillerne skiftes til at tage en tur. Når en spiller har skrevet sit slag, går turen
+/// videre til den næste, terningerne ryddes, og der er tre nye kast. Spillet er slut når
+/// alle spillere har fyldt deres blok - altså efter 15 runder.
+/// </remarks>
 public sealed class GameEngine
 {
+    /// <summary>Højeste antal spillere.</summary>
+    public const int MaxPlayers = 6;
+
     private readonly Random _random;
     private readonly int[] _dice = new int[YatzyRules.DiceCount];
     private readonly bool[] _held = new bool[YatzyRules.DiceCount];
+    private readonly List<Player> _players = [];
 
-    public GameEngine(int? seed = null) => _random = seed.HasValue ? new Random(seed.Value) : new Random();
+    public GameEngine(int? seed = null)
+        : this([DefaultName(0)], seed)
+    {
+    }
+
+    public GameEngine(IEnumerable<string> playerNames, int? seed = null)
+    {
+        _random = seed.HasValue ? new Random(seed.Value) : new Random();
+        SetPlayers(playerNames);
+    }
+
+    /// <summary>Spillerne i den rækkefølge de har tur.</summary>
+    public IReadOnlyList<Player> Players => _players;
+
+    /// <summary>Nummeret på den spiller der har tur.</summary>
+    public int CurrentPlayerIndex { get; private set; }
+
+    /// <summary>Den spiller der har tur.</summary>
+    public Player CurrentPlayer => _players[CurrentPlayerIndex];
+
+    /// <summary>Blokken for den spiller der har tur.</summary>
+    public ScoreSheet Sheet => CurrentPlayer.Sheet;
+
+    /// <summary>Spilles der med mere end én spiller?</summary>
+    public bool IsMultiplayer => _players.Count > 1;
 
     /// <summary>Terningerne. 0 betyder "ikke kastet endnu".</summary>
     public IReadOnlyList<int> Dice => _dice;
@@ -21,11 +54,13 @@ public sealed class GameEngine
     /// <summary>Hvilke terninger der er låst og ikke kastes om.</summary>
     public IReadOnlyList<bool> Held => _held;
 
-    /// <summary>Blokken.</summary>
-    public ScoreSheet Sheet { get; private set; } = new();
-
-    /// <summary>Turnummer, 1-15.</summary>
-    public int Turn => YatzyRules.CategoryCount - Sheet.OpenCount + 1;
+    /// <summary>
+    /// Rundenummer for den spiller der har tur, 1-15. Når blokken er fuld bliver den
+    /// stående på 15 i stedet for at løbe videre til 16.
+    /// </summary>
+    public int Turn => System.Math.Min(
+        YatzyRules.CategoryCount,
+        YatzyRules.CategoryCount - Sheet.OpenCount + 1);
 
     /// <summary>Antal kast brugt i turen (0-3).</summary>
     public int RollsUsed { get; private set; }
@@ -48,8 +83,8 @@ public sealed class GameEngine
     /// <summary>Må der skrives? Man skal have kastet mindst én gang.</summary>
     public bool CanWrite => !IsGameOver && HasRolled;
 
-    /// <summary>Er spillet slut?</summary>
-    public bool IsGameOver => Sheet.IsComplete;
+    /// <summary>Er spillet slut - altså har alle spillere fyldt deres blok?</summary>
+    public bool IsGameOver => _players.All(player => player.IsDone);
 
     /// <summary>Tællevektoren for de terninger der ligger på bordet.</summary>
     public int[] Counts => HasRolled ? YatzyRules.CountFaces(_dice) : new int[YatzyRules.Faces];
@@ -57,12 +92,60 @@ public sealed class GameEngine
     /// <summary>Håndens id i <see cref="DiceCatalog"/> - eller -1 hvis der ikke er kastet.</summary>
     public int StateId => HasRolled ? DiceCatalog.Instance.FullStateIdFromDice(_dice) : -1;
 
-    /// <summary>Starter et nyt spil.</summary>
+    /// <summary>
+    /// Slutstillingen: spillerne sorteret efter score, med delte placeringer ved lige score.
+    /// </summary>
+    public IReadOnlyList<Standing> Standings
+    {
+        get
+        {
+            var sorted = _players.OrderByDescending(player => player.Sheet.Total).ToList();
+            var best = sorted.Count > 0 ? sorted[0].Sheet.Total : 0;
+            var standings = new List<Standing>(sorted.Count);
+            var rank = 0;
+            var previousTotal = int.MinValue;
+
+            for (var i = 0; i < sorted.Count; i++)
+            {
+                var total = sorted[i].Sheet.Total;
+                if (total != previousTotal)
+                {
+                    rank = i + 1;
+                    previousTotal = total;
+                }
+
+                standings.Add(new Standing(rank, sorted[i], total, total == best));
+            }
+
+            return standings;
+        }
+    }
+
+    /// <summary>Standardnavnet til spiller nummer <paramref name="index"/> (0-baseret).</summary>
+    public static string DefaultName(int index) => $"Spiller {index + 1}";
+
+    /// <summary>Starter et nyt spil med de samme spillere.</summary>
     public void NewGame()
     {
-        Sheet = new ScoreSheet();
+        foreach (var player in _players)
+        {
+            player.Reset();
+        }
+
+        CurrentPlayerIndex = 0;
         StartTurn();
     }
+
+    /// <summary>Starter et nyt spil med et nyt hold spillere.</summary>
+    public void NewGame(IEnumerable<string> playerNames)
+    {
+        SetPlayers(playerNames);
+        StartTurn();
+    }
+
+    /// <summary>Omdøber en spiller uden at forstyrre spillet.</summary>
+    public void RenamePlayer(int index, string name) =>
+        _players[index].Name = CleanName(name, index);
 
     /// <summary>Kaster de terninger der ikke er låst.</summary>
     public void Roll()
@@ -116,7 +199,10 @@ public sealed class GameEngine
         }
     }
 
-    /// <summary>Skriver den aktuelle hånd i et slag og går videre til næste tur.</summary>
+    /// <summary>
+    /// Skriver den aktuelle hånd i et slag på den nuværende spillers blok og giver
+    /// turen videre til den næste spiller.
+    /// </summary>
     public int Write(Category category)
     {
         if (!CanWrite)
@@ -125,20 +211,60 @@ public sealed class GameEngine
         }
 
         var score = Sheet.Write(category, Counts);
-        if (!IsGameOver)
-        {
-            StartTurn();
-        }
-        else
-        {
-            RollsUsed = YatzyRules.RollsPerTurn;
-        }
-
+        NextPlayer();
         return score;
     }
 
     /// <summary>Scoren hvis den aktuelle hånd skrives i et slag.</summary>
     public int PotentialScore(Category category) => HasRolled ? YatzyRules.Score(category, Counts) : 0;
+
+    private void NextPlayer()
+    {
+        if (IsGameOver)
+        {
+            // Alle blokke er fulde - der kastes ikke mere.
+            RollsUsed = YatzyRules.RollsPerTurn;
+            return;
+        }
+
+        // Normalt har alle spillere lige mange slag tilbage, men vi springer alligevel
+        // fulde blokke over, så turskiftet aldrig kan ende hos en spiller der er færdig.
+        do
+        {
+            CurrentPlayerIndex = (CurrentPlayerIndex + 1) % _players.Count;
+        }
+        while (CurrentPlayer.IsDone);
+
+        StartTurn();
+    }
+
+    private void SetPlayers(IEnumerable<string> playerNames)
+    {
+        var names = playerNames.ToList();
+        if (names.Count == 0)
+        {
+            names.Add(DefaultName(0));
+        }
+
+        if (names.Count > MaxPlayers)
+        {
+            throw new ArgumentException($"Der kan højst være {MaxPlayers} spillere.", nameof(playerNames));
+        }
+
+        _players.Clear();
+        for (var i = 0; i < names.Count; i++)
+        {
+            _players.Add(new Player(CleanName(names[i], i)));
+        }
+
+        CurrentPlayerIndex = 0;
+    }
+
+    private static string CleanName(string name, int index)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        return trimmed.Length == 0 ? DefaultName(index) : trimmed;
+    }
 
     private void StartTurn()
     {

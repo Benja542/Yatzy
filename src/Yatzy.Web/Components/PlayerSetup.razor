@@ -1,0 +1,71 @@
+@*
+    Opsætning af spillere. Ændringerne træder først i kraft når der startes et nyt spil,
+    så man ikke kommer til at nulstille en blok midt i et parti.
+*@
+
+<div class="toolbar" style="margin-bottom:.6rem">
+    <label class="field">
+        Antal spillere
+        <select value="@_count" @onchange="OnCountChanged">
+            @for (var n = 1; n <= GameEngine.MaxPlayers; n++)
+            {
+                var value = n;
+                <option value="@value">@value</option>
+            }
+        </select>
+    </label>
+</div>
+
+<div class="player-fields">
+    @for (var i = 0; i < _count; i++)
+    {
+        var index = i;
+        <label class="field">
+            Spiller @(index + 1)
+            <input type="text" maxlength="20" value="@_names[index]"
+                   placeholder="@GameEngine.DefaultName(index)"
+                   @onchange="args => _names[index] = args.Value?.ToString() ?? string.Empty" />
+        </label>
+    }
+</div>
+
+<div class="toolbar" style="margin-top:.75rem">
+    <button class="btn btn--primary" @onclick="Start">Start nyt spil</button>
+    @if (OnCancel.HasDelegate)
+    {
+        <button class="btn" @onclick="() => OnCancel.InvokeAsync()">Fortryd</button>
+    }
+</div>
+
+@code {
+    private readonly string[] _names = new string[GameEngine.MaxPlayers];
+
+    private int _count = 1;
+
+    /// <summary>Navnene som feltet skal starte med - typisk de nuværende spillere.</summary>
+    [Parameter] public IReadOnlyList<string> InitialNames { get; set; } = [];
+
+    /// <summary>Kaldes med de valgte navne når der skal startes et nyt spil.</summary>
+    [Parameter] public EventCallback<string[]> OnStart { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        _count = System.Math.Clamp(InitialNames.Count, 1, GameEngine.MaxPlayers);
+        for (var i = 0; i < _names.Length; i++)
+        {
+            _names[i] = i < InitialNames.Count ? InitialNames[i] : GameEngine.DefaultName(i);
+        }
+    }
+
+    private void OnCountChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            _count = System.Math.Clamp(value, 1, GameEngine.MaxPlayers);
+        }
+    }
+
+    private Task Start() => OnStart.InvokeAsync(_names.Take(_count).ToArray());
+}

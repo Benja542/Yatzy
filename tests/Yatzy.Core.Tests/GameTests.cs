@@ -149,6 +149,149 @@ public class GameEngineTests
     }
 }
 
+public class MultiplayerTests
+{
+    [Fact]
+    public void EnSpillerErStandard()
+    {
+        var game = new GameEngine(seed: 1);
+        Assert.Single(game.Players);
+        Assert.False(game.IsMultiplayer);
+        Assert.Equal("Spiller 1", game.Players[0].Name);
+    }
+
+    [Fact]
+    public void TurenGårVidereTilNæsteSpillerEfterHverSkrivning()
+    {
+        var game = new GameEngine(["Anna", "Bo", "Cecilie"], seed: 1);
+
+        Assert.Equal("Anna", game.CurrentPlayer.Name);
+        game.Roll();
+        game.Write(Category.Chance);
+
+        Assert.Equal("Bo", game.CurrentPlayer.Name);
+        Assert.Equal(0, game.RollsUsed);
+        Assert.False(game.HasRolled);
+
+        game.Roll();
+        game.Write(Category.Chance);
+        Assert.Equal("Cecilie", game.CurrentPlayer.Name);
+
+        game.Roll();
+        game.Write(Category.Chance);
+        Assert.Equal("Anna", game.CurrentPlayer.Name);
+    }
+
+    [Fact]
+    public void HverSpillerHarSinEgenBlok()
+    {
+        var game = new GameEngine(["Anna", "Bo"], seed: 2);
+
+        game.Roll();
+        var annasScore = game.PotentialScore(Category.Chance);
+        game.Write(Category.Chance);
+
+        Assert.Equal(annasScore, game.Players[0].Sheet[Category.Chance]);
+        Assert.Null(game.Players[1].Sheet[Category.Chance]);
+        // Bo har alle 15 slag åbne selvom Anna har skrevet et.
+        Assert.Equal(YatzyRules.CategoryCount, game.Players[1].Sheet.OpenCount);
+    }
+
+    [Fact]
+    public void RundenTællerPrSpiller()
+    {
+        var game = new GameEngine(["Anna", "Bo"], seed: 3);
+
+        Assert.Equal(1, game.Turn);
+        game.Roll();
+        game.Write(Category.Chance);
+
+        // Bo er stadig i runde 1 - han har ikke skrevet endnu.
+        Assert.Equal(1, game.Turn);
+        game.Roll();
+        game.Write(Category.Chance);
+
+        // Nu er begge færdige med runde 1, og Anna starter runde 2.
+        Assert.Equal(2, game.Turn);
+        Assert.Equal("Anna", game.CurrentPlayer.Name);
+    }
+
+    [Fact]
+    public void SpilletErFørstSlutNårAlleBlokkeErFulde()
+    {
+        var game = new GameEngine(["Anna", "Bo"], seed: 4);
+
+        var turns = 0;
+        while (!game.IsGameOver)
+        {
+            game.Roll();
+            game.Write(game.Sheet.Open.First());
+            turns++;
+        }
+
+        Assert.Equal(2 * YatzyRules.CategoryCount, turns);
+        Assert.All(game.Players, player => Assert.True(player.Sheet.IsComplete));
+        Assert.False(game.CanRoll);
+    }
+
+    [Fact]
+    public void StillingenSorteresEfterScoreOgDelerPladsVedLighed()
+    {
+        var game = new GameEngine(["Anna", "Bo", "Cecilie"], seed: 5);
+        game.Players[0].Sheet.Write(Category.Chance, 30);
+        game.Players[1].Sheet.Write(Category.Chance, 10);
+        game.Players[2].Sheet.Write(Category.Chance, 30);
+
+        var standings = game.Standings;
+
+        Assert.Equal([1, 1, 3], standings.Select(s => s.Rank));
+        Assert.Equal(2, standings.Count(s => s.IsWinner));
+        Assert.Equal("Bo", standings[^1].Player.Name);
+    }
+
+    [Fact]
+    public void NavneRyddesOpOgTommeFelterFårStandardnavn()
+    {
+        var game = new GameEngine(["  Anna  ", "", "   "], seed: 6);
+
+        Assert.Equal("Anna", game.Players[0].Name);
+        Assert.Equal("Spiller 2", game.Players[1].Name);
+        Assert.Equal("Spiller 3", game.Players[2].Name);
+    }
+
+    [Fact]
+    public void DerErEnØvreGrænseForAntalSpillere()
+    {
+        var names = Enumerable.Range(1, GameEngine.MaxPlayers + 1).Select(i => $"Spiller {i}");
+        Assert.Throws<ArgumentException>(() => new GameEngine(names));
+    }
+
+    [Fact]
+    public void NytSpilRydderAlleBlokke()
+    {
+        var game = new GameEngine(["Anna", "Bo"], seed: 7);
+        game.Roll();
+        game.Write(Category.Chance);
+
+        game.NewGame();
+
+        Assert.All(game.Players, player => Assert.Equal(YatzyRules.CategoryCount, player.Sheet.OpenCount));
+        Assert.Equal("Anna", game.CurrentPlayer.Name);
+        Assert.False(game.HasRolled);
+    }
+
+    [Fact]
+    public void NytSpilKanSkifteHoldet()
+    {
+        var game = new GameEngine(seed: 8);
+        game.NewGame(["Dorte", "Erik", "Frida"]);
+
+        Assert.Equal(3, game.Players.Count);
+        Assert.True(game.IsMultiplayer);
+        Assert.Equal("Dorte", game.CurrentPlayer.Name);
+    }
+}
+
 public class AutoPlayerTests
 {
     [Fact]

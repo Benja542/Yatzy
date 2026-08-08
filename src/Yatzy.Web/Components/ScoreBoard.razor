@@ -1,0 +1,121 @@
+@*
+    Blokken med én kolonne pr. spiller - præcis som en yatzy-blok på papir.
+    Kun den spiller der har tur kan skrive, og kun efter mindst ét kast.
+*@
+
+<div class="table-scroll">
+    <table class="board">
+        <thead>
+            <tr>
+                <th>Slag</th>
+                @foreach (var player in Game.Players)
+                {
+                    <th class="num @(IsCurrent(player) ? "is-current" : null)" title="@player.Name">
+                        @player.Name
+                        @if (IsCurrent(player) && !Game.IsGameOver)
+                        {
+                            <span class="badge badge--hit" title="Har tur">tur</span>
+                        }
+                    </th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var category in Categories.Upper)
+            {
+                @RenderRow(category)
+            }
+
+            <tr class="subtotal">
+                <td>Sum øverst</td>
+                @foreach (var player in Game.Players)
+                {
+                    <td class="num @(IsCurrent(player) ? "is-current" : null)"
+                        title="@BonusHint(player)">
+                        @player.Sheet.UpperSum
+                    </td>
+                }
+            </tr>
+            <tr class="subtotal">
+                <td>Bonus (ved @YatzyRules.BonusThreshold)</td>
+                @foreach (var player in Game.Players)
+                {
+                    <td class="num @(IsCurrent(player) ? "is-current" : null)">@player.Sheet.Bonus</td>
+                }
+            </tr>
+
+            @foreach (var category in Categories.All.Where(c => !Categories.IsUpper(c)))
+            {
+                @RenderRow(category)
+            }
+
+            <tr class="total">
+                <td>I alt</td>
+                @foreach (var player in Game.Players)
+                {
+                    <td class="num @(IsCurrent(player) ? "is-current" : null)">@player.Sheet.Total</td>
+                }
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@if (!Game.IsGameOver)
+{
+    <p class="small muted" style="margin:.5rem 0 0">@Hint</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public GameEngine Game { get; set; } = default!;
+
+    [Parameter] public EventCallback<Category> OnWrite { get; set; }
+
+    /// <summary>Hjælpeteksten under blokken - bygget som én streng, så mellemrummene sidder rigtigt.</summary>
+    private string Hint
+    {
+        get
+        {
+            var next = Game.HasRolled
+                ? $"Klik på et tal i {Game.CurrentPlayer.Name}s kolonne for at skrive hånden der."
+                : "Kast for at se hvad hånden ville give.";
+
+            return $"{BonusHint(Game.CurrentPlayer)} {next}";
+        }
+    }
+
+    private bool IsCurrent(Player player) =>
+        !Game.IsGameOver && ReferenceEquals(player, Game.CurrentPlayer);
+
+    private static string BonusHint(Player player) => player.Sheet.UpperSum >= YatzyRules.BonusThreshold
+        ? $"{player.Name} har bonussen i hus."
+        : player.Sheet.BonusStillPossible
+            ? $"{player.Name} mangler {player.Sheet.PointsToBonus} point i den øverste del for at få bonus."
+            : $"{player.Name} kan ikke nå bonussen længere.";
+
+    private RenderFragment RenderRow(Category category) =>
+        @<tr>
+            <td title="@Categories.Description(category)">@Categories.DanishName(category)</td>
+            @foreach (var player in Game.Players)
+            {
+                var current = IsCurrent(player);
+                <td class="num @(current ? "is-current" : null) @(player.Sheet.IsFilled(category) ? "filled" : null)">
+                    @if (player.Sheet.IsFilled(category))
+                    {
+                        @player.Sheet[category]
+                    }
+                    else if (current && Game.CanWrite)
+                    {
+                        <button type="button" class="cell-btn"
+                                title="Skriv @Game.PotentialScore(category) point i @Categories.DanishName(category)"
+                                @onclick="() => OnWrite.InvokeAsync(category)">
+                            @Game.PotentialScore(category)
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="muted">·</span>
+                    }
+                </td>
+            }
+        </tr>;
+}

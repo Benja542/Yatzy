@@ -17,7 +17,7 @@ til sidste decimal), og simuleringen kontrollerer dem begge.
 
 ```bash
 dotnet run --project src/Yatzy.Web        # brugerfladen — åbn adressen der skrives i konsollen
-dotnet test                               # 80 enhedstests
+dotnet test                               # 90 enhedstests
 ```
 
 Kommandolinjeværktøjet er til de tunge kørsler, hvor browseren bliver for langsom:
@@ -32,9 +32,11 @@ dotnet run --project src/Yatzy.Cli -- spil --spil 100000    # simulerer hele spi
 
 Blazor WebAssembly — alt regnes i browseren, der er ingen server.
 
-* **Spil** — spil en tur ad gangen. Under terningerne står sandsynligheden for hvert
-  åbent slag ud fra de terninger der ligger, og hvilke terninger man skal beholde for
-  at maksimere den. Monte Carlo-estimatet kører i baggrunden og opdaterer sig selv.
+* **Spil** — 1-6 spillere der skiftes til at tage en tur på det samme sæt terninger,
+  med én kolonne pr. spiller på blokken. Under terningerne står sandsynligheden for
+  hvert af de slag *den spiller der har tur* har åbne, og hvilke terninger der skal
+  beholdes for at maksimere den. Monte Carlo-estimatet kører i baggrunden og opdaterer
+  sig selv. Når alle blokke er fulde, vises slutstillingen med vinderen.
 * **Sandsynligheder** — hele tabellen for 1, 2 eller 3 kast, med de analytiske formler
   foldet ud led for led, og en kolonne der siger om den eksakte værdi ligger inden for
   simuleringens konfidensinterval.
@@ -47,8 +49,13 @@ Blazor WebAssembly — alt regnes i browseren, der er ingen server.
 ## Reglerne der spilles med
 
 Seks terninger, tre kast pr. tur (første kast plus to omkast hvor man selv vælger
-hvilke terninger der bliver liggende), 15 slag og dermed 15 ture. Efter tredje kast
+hvilke terninger der bliver liggende), 15 slag og dermed 15 runder. Efter tredje kast
 skal hånden skrives — også hvis den giver 0 point.
+
+Der kan være **1-6 spillere**. De har hver deres kolonne på blokken og skiftes til at
+tage en tur: når en spiller har skrevet sit slag, ryddes terningerne, og den næste
+spiller har tre nye kast. Spillet er slut når alle har fyldt deres blok, og den med
+flest point vinder — er der lige mange point, deles førstepladsen.
 
 | Slag | Krav | Point |
 | --- | --- | --- |
@@ -150,10 +157,11 @@ Udfaldstræet rammer det tal ned til sidste decimal.
 ## Projekter
 
 ```
-src/Yatzy.Core    Regler, terningekatalog, de tre sandsynlighedsmodeller, computerspiller
+src/Yatzy.Core    Regler, terningekatalog, de tre sandsynlighedsmodeller,
+                  spillere og turskifte, computerspiller
 src/Yatzy.Web     Blazor WebAssembly-brugerfladen
 src/Yatzy.Cli     Kommandolinjeværktøj til store kørsler
-tests/            80 enhedstests
+tests/            90 enhedstests
 ```
 
 ## Udgivelse til GitHub Pages

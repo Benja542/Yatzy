@@ -177,8 +177,9 @@ footer {
 }
 
 @media (min-width: 900px) {
+    /* Blokkens kolonne tilpasser sig antallet af spillere; resten går til spillet. */
     .grid--play {
-        grid-template-columns: minmax(0, 1fr) 340px;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 36%);
         align-items: start;
     }
 }
@@ -342,6 +343,92 @@ tr.total td {
 tr.subtotal td {
     background: var(--surface-alt);
     font-weight: 600;
+}
+
+/* ---------- spillere og blok ---------- */
+
+.players {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+}
+
+.player {
+    display: flex;
+    align-items: baseline;
+    gap: .45rem;
+    padding: .25rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-alt);
+}
+
+.player--current {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-weight: 600;
+}
+
+.player__score {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+/* Blokken skal fylde efter sit indhold, ikke strække kolonnerne ud over hele kortet. */
+.board {
+    width: auto;
+    min-width: 100%;
+}
+
+/* Badges i tabelceller skal have luft til teksten foran. */
+th .badge,
+td .badge {
+    margin-left: .35rem;
+}
+
+.board th.is-current,
+.board td.is-current {
+    background: var(--accent-soft);
+}
+
+.board tbody tr:hover td.is-current {
+    background: var(--accent-soft);
+}
+
+.board td.filled {
+    color: var(--text);
+}
+
+/* Tallet i den aktive spillers kolonne er selve knappen der skriver slaget. */
+.cell-btn {
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--accent-strong);
+    background: transparent;
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    padding: 0 .4rem;
+    min-width: 2.2rem;
+    cursor: pointer;
+}
+
+.cell-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-style: solid;
+}
+
+.player-fields {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.player-fields input {
+    width: 10rem;
 }
 
 /* ---------- misc ---------- */

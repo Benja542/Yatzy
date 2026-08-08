@@ -7,17 +7,39 @@
 
 <h1>Spil yatzy</h1>
 <p class="lead">
-    Seks terninger, tre kast pr. tur, 15 slag. Under terningerne står sandsynligheden
-    for at nå hvert af de slag du har tilbage - både regnet eksakt på udfaldstræet og
-    estimeret med en simulering.
+    Seks terninger, tre kast pr. tur, 15 slag. Spillerne skiftes til at tage en tur, og
+    under terningerne står sandsynligheden for at nå hvert af de slag den spiller har
+    tilbage - både regnet eksakt på udfaldstræet og estimeret med en simulering.
 </p>
 
 <div class="grid grid--play">
     <div>
         <div class="card">
+            @if (Game.IsMultiplayer)
+            {
+                <div class="players">
+                    @foreach (var player in Game.Players)
+                    {
+                        <div class="player @(ReferenceEquals(player, Game.CurrentPlayer) && !Game.IsGameOver ? "player--current" : null)">
+                            <span class="player__name">@player.Name</span>
+                            <span class="player__score">@player.Sheet.Total</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!Game.IsGameOver)
+            {
             <div class="stat-row">
+                @if (Game.IsMultiplayer)
+                {
+                    <div class="stat">
+                        <div class="stat__label">Har tur</div>
+                        <div class="stat__value">@Game.CurrentPlayer.Name</div>
+                    </div>
+                }
                 <div class="stat">
-                    <div class="stat__label">Tur</div>
+                    <div class="stat__label">@(Game.IsMultiplayer ? "Runde" : "Tur")</div>
                     <div class="stat__value">@Game.Turn<span class="muted small"> / @YatzyRules.CategoryCount</span></div>
                 </div>
                 <div class="stat">
@@ -29,6 +51,7 @@
                     <div class="stat__value">@Game.Sheet.Total</div>
                 </div>
             </div>
+            }
 
             <div class="dice-row">
                 @for (var i = 0; i < YatzyRules.DiceCount; i++)
@@ -46,21 +69,75 @@
                     @(Game.HasRolled ? "Kast om" : "Kast")
                 </button>
                 <button class="btn" @onclick="NewGame">Nyt spil</button>
+                <button class="btn" @onclick="() => _showSetup = !_showSetup">
+                    Spillere @(Game.IsMultiplayer ? $"({Game.Players.Count})" : string.Empty)
+                </button>
                 @if (Game.HasRolled && Game.RollsLeft > 0)
                 {
                     <span class="muted small">Klik på en terning for at låse den.</span>
                 }
-                @if (Game.IsGameOver)
-                {
-                    <span class="badge badge--hit">Spillet er slut - @Game.Sheet.Total point</span>
-                }
             </div>
         </div>
+
+        @if (_showSetup)
+        {
+            <div class="card">
+                <h2>Spillere</h2>
+                <p class="small muted">
+                    Vælg hvor mange der er med, og hvad de hedder. Alle spiller på det samme
+                    sæt terninger på skift - ét klik på "Kast" hører til den spiller der har tur.
+                </p>
+                <PlayerSetup InitialNames="PlayerNames" OnStart="StartWithPlayers" OnCancel="() => _showSetup = false" />
+            </div>
+        }
+
+        @if (Game.IsGameOver)
+        {
+            <div class="card">
+                <h2>@(Game.IsMultiplayer ? "Slutstilling" : "Spillet er slut")</h2>
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Spiller</th>
+                                <th class="num">Øverst</th>
+                                <th class="num">Bonus</th>
+                                <th class="num">Nederst</th>
+                                <th class="num">I alt</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var standing in Game.Standings)
+                            {
+                                <tr>
+                                    <td class="num muted">@standing.Rank.</td>
+                                    <td>
+                                        @standing.Player.Name
+                                        @if (standing.IsWinner && Game.IsMultiplayer)
+                                        {
+                                            <span class="badge badge--hit">🏆 vinder</span>
+                                        }
+                                    </td>
+                                    <td class="num">@standing.Player.Sheet.UpperSum</td>
+                                    <td class="num">@standing.Player.Sheet.Bonus</td>
+                                    <td class="num">@standing.Player.Sheet.LowerSum</td>
+                                    <td class="num"><strong>@standing.Total</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="toolbar" style="margin-top:.75rem">
+                    <button class="btn btn--primary" @onclick="NewGame">Spil igen</button>
+                </div>
+            </div>
+        }
 
         @if (Game.HasRolled && !Game.IsGameOver)
         {
             <div class="card">
-                <h2>Computerens forslag</h2>
+                <h2>Forslag til @Game.CurrentPlayer.Name</h2>
                 @if (Game.RollsLeft > 0)
                 {
                     <p class="small muted">
@@ -86,11 +163,23 @@
         }
 
         <div class="card">
-            <h2>Sandsynlighed for de slag du har tilbage</h2>
+            <h2>
+                @if (Game.IsGameOver)
+                {
+                    <text>Sandsynligheder</text>
+                }
+                else
+                {
+                    <text>
+                        Sandsynlighed for de slag
+                        @(Game.IsMultiplayer ? Game.CurrentPlayer.Name + " har tilbage" : "du har tilbage")
+                    </text>
+                }
+            </h2>
 
             @if (Game.IsGameOver)
             {
-                <p class="muted">Blokken er fuld. Start et nyt spil for at se sandsynligheder igen.</p>
+                <p class="muted">Alle blokke er fulde. Start et nyt spil for at se sandsynligheder igen.</p>
             }
             else
             {
@@ -203,7 +292,7 @@
     <div>
         <div class="card">
             <h2>Blokken</h2>
-            <ScoreSheetView Game="Game" OnWrite="Write" />
+            <ScoreBoard Game="Game" OnWrite="Write" />
         </div>
     </div>
 </div>
@@ -216,11 +305,14 @@
     private long _trials = 5_000;
     private bool _auto = true;
     private bool _running;
+    private bool _showSetup;
     private int _progress;
     private int _runId;
     private bool _disposed;
 
     private IReadOnlyList<ProbabilityRow> Rows => _rows;
+
+    private IReadOnlyList<string> PlayerNames => Game.Players.Select(player => player.Name).ToList();
 
     private int[] SuggestedKeep => Game.HasRolled && Game.RollsLeft > 0
         ? DiceCatalog.ToDice(DiceCatalog.Instance.Keep(_adviser.ChooseKeep(Game.StateId, Game.RollsLeft)))
@@ -259,6 +351,14 @@
     private void NewGame()
     {
         Game.NewGame();
+        _showSetup = false;
+        Refresh();
+    }
+
+    private void StartWithPlayers(string[] names)
+    {
+        Game.NewGame(names);
+        _showSetup = false;
         Refresh();
     }
 
@@ -278,6 +378,8 @@
             return;
         }
 
+        // Blokken skifter ved hvert turskifte, så computerens forslag skal regnes forfra
+        // for den spiller der nu har tur.
         _adviser.PlanTurn(Game.Sheet);
 
         _rows = ProbabilityReport.Build(
