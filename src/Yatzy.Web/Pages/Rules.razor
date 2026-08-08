@@ -1,0 +1,84 @@
+@page "/regler"
+
+<PageTitle>Regler</PageTitle>
+
+<h1>Regler</h1>
+<p class="lead">
+    Der spilles med seks terninger og de klassiske 15 slag. Hver tur har tre kast:
+    første kast med alle seks terninger, og derefter to omkast hvor man selv vælger
+    hvilke terninger der bliver liggende. Efter tredje kast skal hånden skrives i et
+    af de slag der stadig er åbne - også selvom den giver 0 point.
+</p>
+
+<div class="card">
+    <h2>De 15 slag</h2>
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>Slag</th>
+                    <th>Krav</th>
+                    <th class="num">Point</th>
+                    <th class="num">Højest mulige</th>
+                    <th class="num" title="Sandsynligheden i ét enkelt kast med alle seks terninger">P (1 kast)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var category in Categories.All)
+                {
+                    var analytic = AnalyticProbability.Compute(category);
+                    <tr>
+                        <td>@Categories.DanishName(category)</td>
+                        <td class="small" style="white-space:normal">@Categories.Description(category)</td>
+                        <td class="small muted">@PointText(category)</td>
+                        <td class="num">@Categories.MaxScore(category)</td>
+                        <td class="num muted">@Format.SmartPercent(analytic.Value)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Bonus og samlet score</h2>
+    <p>
+        De seks øverste slag lægges sammen. Er summen mindst
+        <strong>@YatzyRules.BonusThreshold point</strong>, gives der en bonus på
+        <strong>@YatzyRules.BonusPoints point</strong>. Grænsen svarer til fire terninger
+        af hver øjenværdi: 4·1 + 4·2 + ... + 4·6 = @YatzyRules.BonusThreshold.
+        Slutscoren er den øverste sum plus bonus plus den nederste sum.
+    </p>
+    <p class="muted small">
+        Bemærk: med seks terninger er "fire ens af hver" en hårdere grænse end den
+        velkendte 63-grænse i 5-terningers-yatzy - derfor er bonussen også større.
+    </p>
+</div>
+
+<div class="card">
+    <h2>Hvad "sandsynligheden for et slag" betyder her</h2>
+    <p>
+        I tabellerne betyder <em>at slå et slag</em> at kombinationen er til stede, altså at
+        slaget giver point. For chance er det altid opfyldt; for enere betyder det mindst én
+        1'er; for fuldt hus tre ens plus et par med en anden øjenværdi, og så videre.
+        Hvor mange point man får, er en anden sag - den del hører til
+        <a href="simulering">simuleringen af hele spil</a>.
+    </p>
+    <p>
+        Sandsynlighederne i <a href="">spillet</a> og på
+        <a href="udfaldstrae">udfaldstræ-siden</a> regner med at man spiller optimalt
+        efter netop det slag i resten af turen. Det er derfor et loft: går man efter
+        flere slag på én gang, kan man ikke nå dem alle med de tal.
+    </p>
+</div>
+
+@code {
+    private static string PointText(Category category) => category switch
+    {
+        Category.SmallStraight => $"{YatzyRules.SmallStraightPoints} point",
+        Category.LargeStraight => $"{YatzyRules.LargeStraightPoints} point",
+        Category.Yatzy => $"{YatzyRules.YatzyPoints} point",
+        Category.Chance => "summen af alle seks",
+        _ => "summen af de terninger der indgår",
+    };
+}

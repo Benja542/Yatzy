@@ -1,0 +1,25 @@
+@*
+    En kompakt visning af en håndfuld terninger - bruges i tabeller og i udfaldstræet.
+*@
+
+<span class="mini-dice" title="@Title">
+    @foreach (var die in Dice)
+    {
+        <span class="mini-die @(Kept ? "mini-die--kept" : null)">@die</span>
+    }
+    @if (!Dice.Any())
+    {
+        <span class="muted small">@EmptyText</span>
+    }
+</span>
+
+@code {
+    [Parameter] public IEnumerable<int> Dice { get; set; } = [];
+
+    /// <summary>Marker terningerne som "beholdes".</summary>
+    [Parameter] public bool Kept { get; set; }
+
+    [Parameter] public string EmptyText { get; set; } = "ingen";
+
+    [Parameter] public string? Title { get; set; }
+}

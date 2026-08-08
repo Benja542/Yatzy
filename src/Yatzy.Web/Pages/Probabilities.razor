@@ -1,0 +1,259 @@
+@page "/sandsynligheder"
+@implements IDisposable
+@inject OutcomeTreeSolver Solver
+
+<PageTitle>Sandsynligheder - tre metoder</PageTitle>
+
+<h1>Sandsynligheder for de 15 slag</h1>
+<p class="lead">
+    Den samme sandsynlighed regnet ud på tre måder: med en lukket formel, ved at folde
+    udfaldstræet sammen, og ved at kaste terninger tilfældigt rigtig mange gange.
+    De to første er eksakte, den sidste er et estimat med en usikkerhed man kan se.
+</p>
+
+<div class="card">
+    <div class="toolbar">
+        <label class="field">
+            Antal kast i turen
+            <select value="@_rolls" @onchange="OnRollsChanged">
+                <option value="1">1 kast (ingen omkast)</option>
+                <option value="2">2 kast</option>
+                <option value="3">3 kast (en hel tur)</option>
+            </select>
+        </label>
+        <label class="field">
+            Simuleringer pr. slag
+            <select value="@_trials" @onchange="OnTrialsChanged">
+                <option value="10000">10.000</option>
+                <option value="50000">50.000</option>
+                <option value="200000">200.000</option>
+                <option value="1000000">1.000.000</option>
+            </select>
+        </label>
+        <button class="btn btn--primary" disabled="@_running" @onclick="() => RunMonteCarlo()">
+            @(_running ? "Simulerer ..." : "Kør Monte Carlo")
+        </button>
+    </div>
+
+    @if (_running)
+    {
+        <div class="progress"><div style="width:@(_progress)%"></div></div>
+    }
+
+    <div class="table-scroll" style="margin-top:.75rem">
+        <table>
+            <thead>
+                <tr>
+                    <th>Slag</th>
+                    <th class="num" title="Lukket formel for ét enkelt kast med seks terninger">Analytisk (1 kast)</th>
+                    <th class="num">Som brøk</th>
+                    <th class="num" title="Eksakt, foldet sammen bagfra i udfaldstræet">Udfaldstræ (@_rolls kast)</th>
+                    <th class="num">Monte Carlo</th>
+                    <th class="num">± 95 %</th>
+                    <th class="num" title="Monte Carlo minus udfaldstræ">Afvigelse</th>
+                    <th title="Ligger den eksakte værdi inden for simuleringens konfidensinterval?">Dækket</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var category in Categories.All)
+                {
+                    var analytic = AnalyticProbability.Compute(category);
+                    var tree = Solver.Solve(category).ProbabilityFromScratch(_rolls);
+                    _monteCarlo.TryGetValue(category, out var mc);
+                    <tr>
+                        <td title="@Categories.Description(category)">@Categories.DanishName(category)</td>
+                        <td class="num">@Format.SmartPercent(analytic.Value)</td>
+                        <td class="num mono muted">@analytic.Probability</td>
+                        <td class="num"><strong>@Format.SmartPercent(tree)</strong></td>
+                        <td class="num">@(mc.Trials > 0 ? Format.SmartPercent(mc.Estimate) : "-")</td>
+                        <td class="num muted small">@(mc.Trials > 0 ? Format.SmartPercent(mc.MarginOfError) : "")</td>
+                        <td class="num muted small">@(mc.Trials > 0 ? Format.SignedPercent(mc.Estimate - tree) : "")</td>
+                        <td>
+                            @if (mc.Trials > 0)
+                            {
+                                var covered = tree >= mc.LowerBound && tree <= mc.UpperBound;
+                                <span class="badge @(covered ? "badge--hit" : null)">@(covered ? "ja" : "nej")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (_rolls == 1)
+    {
+        <p class="small muted" style="margin-top:.6rem">
+            Med kun ét kast beskriver den analytiske formel og udfaldstræet præcis samme hændelse,
+            og de to kolonner er derfor identiske ned til sidste decimal. Det er den bedste kontrol
+            af at begge udregninger er rigtige.
+        </p>
+    }
+    else
+    {
+        <p class="small muted" style="margin-top:.6rem">
+            Den analytiske kolonne gælder altid ét enkelt kast. Udfaldstræet regner med @_rolls kast
+            og med at man beholder de rigtige terninger undervejs - derfor er tallene højere.
+        </p>
+    }
+</div>
+
+<div class="card">
+    <h2>Sådan regnes den analytiske sandsynlighed ud</h2>
+    <p class="small muted">
+        Alle formler gælder ét kast med seks terninger, hvor der er
+        6<sup>6</sup> = @Format.Integer(AnalyticProbability.TotalOutcomes) lige sandsynlige udfald.
+        Klik på et slag for at se leddene.
+    </p>
+
+    @foreach (var result in AnalyticProbability.All())
+    {
+        <details class="formula">
+            <summary>
+                @Categories.DanishName(result.Category)
+                <span class="muted small">- @result.Method</span>
+                <span class="badge">@result.Probability = @Format.SmartPercent(result.Value)</span>
+            </summary>
+            <p class="mono small" style="margin-top:.5rem">@result.Formula</p>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Led</th>
+                            <th class="num">Udfald</th>
+                            <th>Udregning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var term in result.Terms)
+                        {
+                            <tr>
+                                <td class="mono">@term.Label</td>
+                                <td class="num">@Format.Integer(term.Outcomes)</td>
+                                <td class="small muted mono">@term.Explanation</td>
+                            </tr>
+                        }
+                        <tr class="total">
+                            <td>Gunstige udfald</td>
+                            <td class="num">@Format.Integer(result.Favourable)</td>
+                            <td class="small muted">
+                                af @Format.Integer(result.Total) mulige
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    }
+</div>
+
+<div class="card">
+    <h2>De tre metoder</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Metode</th>
+                <th>Hvad den gør</th>
+                <th>Eksakt?</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Analytisk</td>
+                <td class="small" style="white-space:normal">
+                    Tæller de gunstige udfald med kombinatorik - komplementærreglen,
+                    inklusion-eksklusion og optælling over kastets "form". Regnes i brøker,
+                    så resultatet er helt uden afrundingsfejl.
+                </td>
+                <td>Ja</td>
+            </tr>
+            <tr>
+                <td>Udfaldstræ</td>
+                <td class="small" style="white-space:normal">
+                    Folder træet af kast og valg sammen bagfra: værdien af en hånd er den bedste
+                    af de "behold"-muligheder man har, og værdien af et valg er gennemsnittet over
+                    de mulige udfald. Håndterer omkast og strategi, som formlerne ikke kan.
+                </td>
+                <td>Ja</td>
+            </tr>
+            <tr>
+                <td>Monte Carlo</td>
+                <td class="small" style="white-space:normal">
+                    Kaster terninger tilfældigt mange gange med samme strategi og tæller hvor ofte
+                    slaget lykkes. Usikkerheden falder som 1/√n, så ti gange flere simuleringer
+                    giver kun godt tre gange mindre usikkerhed.
+                </td>
+                <td>Nej - estimat</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private readonly Dictionary<Category, MonteCarloResult> _monteCarlo = [];
+
+    private int _rolls = 3;
+    private long _trials = 50_000;
+    private bool _running;
+    private int _progress;
+    private int _runId;
+    private bool _disposed;
+
+    private async Task RunMonteCarlo()
+    {
+        var runId = ++_runId;
+        _running = true;
+        _progress = 0;
+        _monteCarlo.Clear();
+
+        const long chunk = 5_000;
+        for (var i = 0; i < Categories.All.Length; i++)
+        {
+            var category = Categories.All[i];
+            var estimator = new MonteCarloEstimator(Solver.Solve(category), null, _rolls - 1);
+
+            while (estimator.Trials < _trials)
+            {
+                estimator.Run(System.Math.Min(chunk, _trials - estimator.Trials));
+                if (runId != _runId || _disposed)
+                {
+                    return;
+                }
+
+                _monteCarlo[category] = estimator.Result;
+                _progress = (int)(100.0 * (i + (double)estimator.Trials / _trials) / Categories.All.Length);
+                StateHasChanged();
+                await Task.Delay(1);
+            }
+        }
+
+        _running = false;
+        _progress = 100;
+        StateHasChanged();
+    }
+
+    private void OnRollsChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            _rolls = value;
+            _monteCarlo.Clear();
+            _runId++;
+            _running = false;
+        }
+    }
+
+    private void OnTrialsChanged(ChangeEventArgs args)
+    {
+        if (long.TryParse(args.Value?.ToString(), out var value))
+        {
+            _trials = value;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _runId++;
+    }
+}
