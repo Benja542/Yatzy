@@ -300,6 +300,192 @@ public class OutcomeTreeTests
     }
 }
 
+public class MaxPointsTests
+{
+    private readonly OutcomeTreeSolver _solver = new();
+    private readonly DiceCatalog _catalog = DiceCatalog.Instance;
+
+    [Fact]
+    public void MaksPointErAldrigMereSandsynligtEndBareAtRamme()
+    {
+        foreach (var category in Categories.All)
+        {
+            var hit = _solver.Solve(category, ScoreGoal.AnyPoints);
+            var max = _solver.Solve(category, ScoreGoal.MaxPoints);
+
+            for (var stateId = 0; stateId < _catalog.FullStateCount; stateId++)
+            {
+                for (var rerolls = 0; rerolls <= 2; rerolls++)
+                {
+                    Assert.True(
+                        max.Probability(stateId, rerolls) <= hit.Probability(stateId, rerolls) + 1e-12,
+                        $"{Categories.DanishName(category)} med {rerolls} omkast");
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void DeToMålErEnsForSlagMedFastPointværdi()
+    {
+        // Straights og yatzy giver enten deres faste point eller ingenting.
+        foreach (var category in Categories.All.Where(ScoreGoals.AreEquivalent))
+        {
+            var hit = _solver.Solve(category, ScoreGoal.AnyPoints);
+            var max = _solver.Solve(category, ScoreGoal.MaxPoints);
+            Assert.Equal(hit.ProbabilityFromScratch(3), max.ProbabilityFromScratch(3), 12);
+        }
+    }
+
+    [Fact]
+    public void MaksPointIEtKastStemmerMedEnFuldOptælling()
+    {
+        // Den analytiske optælling over hænder mod en gennemgang af alle 46.656 udfald.
+        foreach (var category in Categories.All)
+        {
+            var analytic = AnalyticProbability.Compute(category, ScoreGoal.MaxPoints);
+            Assert.Equal(AnalyticProbability.BruteForceCount(category, ScoreGoal.MaxPoints), analytic.Favourable);
+        }
+    }
+
+    [Fact]
+    public void EtEnkeltKastGiverSammeTalSomUdfaldstræet()
+    {
+        foreach (var category in Categories.All)
+        {
+            Assert.Equal(
+                AnalyticProbability.Compute(category, ScoreGoal.MaxPoints).Value,
+                _solver.Solve(category, ScoreGoal.MaxPoints).ProbabilityFromScratch(1),
+                12);
+        }
+    }
+
+    [Theory]
+    // Maks i enere er 6 point, altså seks 1'ere - lige så svært som en yatzy.
+    [InlineData(Category.Ones, "1/46656")]
+    [InlineData(Category.Sixes, "1/46656")]
+    // Maks i chance er seks seksere.
+    [InlineData(Category.Chance, "1/46656")]
+    // Maks i yatzy er yatzy - seks ens af en hvilken som helst øjenværdi.
+    [InlineData(Category.Yatzy, "1/7776")]
+    public void KendteMaksSandsynligheder(Category category, string expected) =>
+        Assert.Equal(expected, AnalyticProbability.Compute(category, ScoreGoal.MaxPoints).Probability.ToString());
+}
+
+public class KeepConditionedTests
+{
+    private readonly OutcomeTreeSolver _solver = new();
+    private readonly DiceCatalog _catalog = DiceCatalog.Instance;
+
+    [Fact]
+    public void DenBedsteMarkeringGiverSammeTalSomDenOptimaleVærdi()
+    {
+        foreach (var category in Categories.All)
+        {
+            var solution = _solver.Solve(category, ScoreGoal.MaxPoints);
+            for (var stateId = 0; stateId < _catalog.FullStateCount; stateId++)
+            {
+                var best = solution.BestKeepId(stateId, 2);
+                Assert.Equal(solution.Probability(stateId, 2), solution.ProbabilityWithKeep(best, 2), 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void IngenMarkeringKanSlåDenOptimale()
+    {
+        var solution = _solver.Solve(Category.Sixes, ScoreGoal.MaxPoints);
+        for (var stateId = 0; stateId < _catalog.FullStateCount; stateId++)
+        {
+            var optimal = solution.Probability(stateId, 2);
+            foreach (var keepId in _catalog.SubKeeps(stateId))
+            {
+                Assert.True(solution.ProbabilityWithKeep(keepId, 2) <= optimal + 1e-12);
+            }
+        }
+    }
+
+    [Fact]
+    public void EnDårligMarkeringGiverEnLavereSandsynlighed()
+    {
+        // Fem seksere og en etter, mål: maks i seksere (36 point).
+        // Beholder man de fem seksere, mangler man kun én; beholder man etteren i
+        // stedet, skal alle fem omkastede blive seksere.
+        var solution = _solver.Solve(Category.Sixes, ScoreGoal.MaxPoints);
+        var stateId = _catalog.FullStateIdFromDice([6, 6, 6, 6, 6, 1]);
+
+        var keepSixes = solution.ProbabilityWithKeep(_catalog.KeepId([0, 0, 0, 0, 0, 5]), 1);
+        var keepOne = solution.ProbabilityWithKeep(_catalog.KeepId([1, 0, 0, 0, 0, 0]), 1);
+
+        Assert.Equal(1d / 6d, keepSixes, 12);
+        Assert.Equal(0d, keepOne, 12);
+        Assert.Equal(keepSixes, solution.Probability(stateId, 1), 12);
+    }
+
+    [Fact]
+    public void SimuleringenFølgerMarkeringenOgIkkeStrategien()
+    {
+        // Med en bevidst dårlig markering skal simuleringen ramme den lave, eksakte værdi
+        // - ikke den optimale. Det er testen af at markeringen faktisk bliver brugt.
+        var solution = _solver.Solve(Category.Sixes, ScoreGoal.MaxPoints);
+        int[] counts = [1, 0, 0, 0, 0, 5];
+        int[] badKeep = [1, 0, 0, 0, 0, 2];
+
+        var exact = solution.ProbabilityWithKeep(_catalog.KeepId(badKeep), 2);
+        var optimal = solution.Probability(_catalog.FullStateId(counts), 2);
+        var result = MonteCarloEstimator.Estimate(solution, counts, 2, 200_000, seed: 4242, firstKeep: badKeep);
+
+        Assert.True(exact < optimal, "den dårlige markering skal være ringere end den optimale");
+        Assert.InRange(result.Estimate, exact - 4 * result.StandardError - 1e-4, exact + 4 * result.StandardError + 1e-4);
+    }
+
+    [Fact]
+    public void MarkeringenSkalVæreEnDelmængdeAfHånden()
+    {
+        var solution = _solver.Solve(Category.Sixes, ScoreGoal.MaxPoints);
+        int[] counts = [0, 0, 0, 0, 0, 6];
+        int[] impossible = [3, 0, 0, 0, 0, 3];
+
+        Assert.Throws<ArgumentException>(
+            () => new MonteCarloEstimator(solution, counts, 2, seed: 1, firstKeep: impossible));
+    }
+
+    [Fact]
+    public void TræetsRodBrugerDenValgteMarkering()
+    {
+        var solution = _solver.Solve(Category.Sixes, ScoreGoal.MaxPoints);
+        var stateId = _catalog.FullStateIdFromDice([6, 6, 6, 6, 6, 1]);
+        int[] keep = [1, 0, 0, 0, 0, 4];
+
+        var tree = solution.BuildTree(stateId, 2, maxChildren: 4, forcedKeep: keep);
+
+        Assert.Equal(new[] { 1, 6, 6, 6, 6 }, tree.Kept);
+        Assert.Equal(solution.ProbabilityWithKeep(_catalog.KeepId(keep), 2), tree.Value, 12);
+        Assert.Equal(1d, tree.Children.Sum(child => child.BranchProbability) + tree.TruncatedProbability, 12);
+    }
+
+    [Fact]
+    public void RapportenBrugerMarkeringenIAlleTreKolonner()
+    {
+        int[] counts = [1, 0, 0, 0, 0, 5];
+        int[] keep = [0, 0, 0, 0, 0, 5];
+
+        var rows = ProbabilityReport.Build(
+            [Category.Sixes], counts, keep, rerollsLeft: 1, ScoreGoal.MaxPoints,
+            monteCarloTrials: 50_000, seed: 77);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(36, row.MaxScore);
+        Assert.Equal(30, row.CurrentScore);
+        Assert.Equal(1d / 6d, row.TreeProbability, 12);
+        Assert.Equal(row.BestProbability, row.TreeProbability, 12);
+
+        var mc = row.MonteCarlo!.Value;
+        Assert.Equal(ScoreGoal.MaxPoints, mc.Goal);
+        Assert.InRange(row.TreeProbability, mc.LowerBound, mc.UpperBound);
+    }
+}
+
 public class MonteCarloTests
 {
     private readonly OutcomeTreeSolver _solver = new();
@@ -369,7 +555,7 @@ public class MonteCarloTests
     [Fact]
     public void WilsonIntervalletErGyldigtVedNulHits()
     {
-        var result = MonteCarloEstimator.Build(Category.Yatzy, trials: 1_000, hits: 0, elapsedMilliseconds: 0);
+        var result = MonteCarloEstimator.Build(Category.Yatzy, ScoreGoal.AnyPoints, trials: 1_000, hits: 0, elapsedMilliseconds: 0);
         Assert.Equal(0d, result.Estimate);
         Assert.Equal(0d, result.LowerBound, 12);
         Assert.InRange(result.UpperBound, 0d, 0.01d);

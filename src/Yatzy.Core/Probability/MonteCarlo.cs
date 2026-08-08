@@ -8,6 +8,7 @@ namespace Yatzy.Core.Probability;
 /// Resultatet af en Monte Carlo-simulering.
 /// </summary>
 /// <param name="Category">Slaget der blev simuleret.</param>
+/// <param name="Goal">Hvad der talte som en succes.</param>
 /// <param name="Trials">Antal simulerede ture.</param>
 /// <param name="Hits">Antal gange slaget blev slået.</param>
 /// <param name="Estimate">Den estimerede sandsynlighed (hits / trials).</param>
@@ -17,6 +18,7 @@ namespace Yatzy.Core.Probability;
 /// <param name="ElapsedMilliseconds">Tidsforbrug.</param>
 public readonly record struct MonteCarloResult(
     Category Category,
+    ScoreGoal Goal,
     long Trials,
     long Hits,
     double Estimate,
@@ -34,10 +36,16 @@ public readonly record struct MonteCarloResult(
 /// mange gange - Monte Carlo-metoden.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Simuleringen bruger nøjagtig samme strategi som udfaldstræet regner med (den
 /// optimale "behold"-beslutning fra <see cref="CategorySolution"/>). Derfor skal de to
 /// tal konvergere mod hinanden, og forskellen er ren simuleringsusikkerhed.
 /// Det gør estimatet til en uafhængig kontrol af den eksakte beregning.
+/// </para>
+/// <para>
+/// Har spilleren markeret hvilke terninger der skal beholdes, kastes første omkast med
+/// præcis de terninger i stedet for de optimale - nøjagtig som udfaldstræet gør, når
+/// man spørger om værdien af en bestemt gren.
 /// </remarks>
 public sealed class MonteCarloEstimator
 {
@@ -47,6 +55,7 @@ public sealed class MonteCarloEstimator
     private readonly DiceCatalog _catalog;
     private readonly int[]? _startCounts;
     private readonly int _rerollsLeft;
+    private readonly int? _firstKeepId;
     private readonly Random _random;
     private readonly int[] _counts = new int[YatzyRules.Faces];
 
@@ -62,7 +71,12 @@ public sealed class MonteCarloEstimator
     /// </param>
     /// <param name="rerollsLeft">Antal omkast tilbage efter starthånden.</param>
     /// <param name="seed">Frø til tilfældighedsgeneratoren. Sat = reproducerbart resultat.</param>
-    public MonteCarloEstimator(CategorySolution solution, int[]? startCounts, int rerollsLeft, int? seed = null)
+    /// <param name="firstKeep">
+    /// De terninger der skal beholdes i første omkast, eller <c>null</c> for at lade
+    /// strategien vælge. Skal være en delmængde af <paramref name="startCounts"/>.
+    /// </param>
+    public MonteCarloEstimator(
+        CategorySolution solution, int[]? startCounts, int rerollsLeft, int? seed = null, int[]? firstKeep = null)
     {
         if (rerollsLeft < 0 || rerollsLeft > solution.MaxRerolls)
         {
@@ -74,9 +88,26 @@ public sealed class MonteCarloEstimator
         _startCounts = startCounts?.ToArray();
         _rerollsLeft = rerollsLeft;
         _random = seed.HasValue ? new Random(seed.Value) : new Random();
+
+        if (firstKeep is not null && startCounts is not null && rerollsLeft > 0)
+        {
+            for (var face = 0; face < YatzyRules.Faces; face++)
+            {
+                if (firstKeep[face] > startCounts[face])
+                {
+                    throw new ArgumentException(
+                        "Der kan ikke beholdes flere terninger end der ligger på bordet.", nameof(firstKeep));
+                }
+            }
+
+            _firstKeepId = DiceCatalog.Instance.KeepId(firstKeep);
+        }
     }
 
     public Category Category => _solution.Category;
+
+    /// <summary>Hvad der tælles som en succes i simuleringen.</summary>
+    public ScoreGoal Goal => _solution.Goal;
 
     /// <summary>Antal simulerede ture indtil nu.</summary>
     public long Trials { get; private set; }
@@ -102,7 +133,7 @@ public sealed class MonteCarloEstimator
     }
 
     /// <summary>Det aktuelle estimat med 95 %-konfidensinterval.</summary>
-    public MonteCarloResult Result => Build(Category, Trials, Hits, _elapsedMilliseconds);
+    public MonteCarloResult Result => Build(Category, Goal, Trials, Hits, _elapsedMilliseconds);
 
     private bool SimulateOnce()
     {
@@ -122,14 +153,17 @@ public sealed class MonteCarloEstimator
 
         for (var r = rerolls; r >= 1; r--)
         {
-            var stateId = _catalog.FullStateId(_counts);
-            var keepId = _solution.BestKeepId(stateId, r);
+            // Første omkast bruger spillerens markering, hvis der er en. Derefter spilles optimalt.
+            var keepId = r == rerolls && _firstKeepId.HasValue
+                ? _firstKeepId.Value
+                : _solution.BestKeepId(_catalog.FullStateId(_counts), r);
+
             var keep = _catalog.Keep(keepId);
             Array.Copy(keep, _counts, _counts.Length);
             RollInto(_counts, YatzyRules.DiceCount - _catalog.KeepSize(keepId));
         }
 
-        return YatzyRules.IsHit(Category, _counts);
+        return YatzyRules.IsAchieved(Category, Goal, _counts);
     }
 
     private void RollInto(int[] counts, int dice)
@@ -142,9 +176,9 @@ public sealed class MonteCarloEstimator
 
     /// <summary>Kører en simulering fra en given hånd i én kaldelse.</summary>
     public static MonteCarloResult Estimate(
-        CategorySolution solution, int[]? startCounts, int rerollsLeft, long trials, int? seed = null)
+        CategorySolution solution, int[]? startCounts, int rerollsLeft, long trials, int? seed = null, int[]? firstKeep = null)
     {
-        var estimator = new MonteCarloEstimator(solution, startCounts, rerollsLeft, seed);
+        var estimator = new MonteCarloEstimator(solution, startCounts, rerollsLeft, seed, firstKeep);
         estimator.Run(trials);
         return estimator.Result;
     }
@@ -158,11 +192,12 @@ public sealed class MonteCarloEstimator
         Estimate(solution, startCounts: null, rerollsLeft: rollsLeft - 1, trials, seed);
 
     /// <summary>Bygger et resultat med Wilson-konfidensinterval ud fra antal forsøg og hits.</summary>
-    public static MonteCarloResult Build(Category category, long trials, long hits, double elapsedMilliseconds)
+    public static MonteCarloResult Build(
+        Category category, ScoreGoal goal, long trials, long hits, double elapsedMilliseconds)
     {
         if (trials <= 0)
         {
-            return new MonteCarloResult(category, 0, 0, double.NaN, double.NaN, double.NaN, double.NaN, elapsedMilliseconds);
+            return new MonteCarloResult(category, goal, 0, 0, double.NaN, double.NaN, double.NaN, double.NaN, elapsedMilliseconds);
         }
 
         var n = (double)trials;
@@ -177,7 +212,7 @@ public sealed class MonteCarloEstimator
         var spread = Z95 * System.Math.Sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / denominator;
 
         return new MonteCarloResult(
-            category, trials, hits, p, standardError,
+            category, goal, trials, hits, p, standardError,
             System.Math.Max(0d, centre - spread),
             System.Math.Min(1d, centre + spread),
             elapsedMilliseconds);

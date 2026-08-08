@@ -83,9 +83,21 @@ public static class YatzyRules
 
     /// <summary>
     /// Er slaget "slået"? Dvs. giver kombinationen point (score &gt; 0).
-    /// Det er denne hændelse alle sandsynlighederne i programmet handler om.
     /// </summary>
     public static bool IsHit(Category category, ReadOnlySpan<int> counts) => Score(category, counts) > 0;
+
+    /// <summary>
+    /// Er målet nået? Det er denne hændelse alle sandsynlighederne i programmet handler om.
+    /// </summary>
+    /// <param name="category">Slaget.</param>
+    /// <param name="goal">Om det er nok at få point, eller om der skal maks point til.</param>
+    /// <param name="counts">Hånden som tællevektor.</param>
+    public static bool IsAchieved(Category category, ScoreGoal goal, ReadOnlySpan<int> counts) => goal switch
+    {
+        ScoreGoal.AnyPoints => Score(category, counts) > 0,
+        ScoreGoal.MaxPoints => Score(category, counts) >= Categories.MaxScore(category),
+        _ => throw new ArgumentOutOfRangeException(nameof(goal), goal, "Ukendt mål."),
+    };
 
     /// <summary>Summen af alle øjne.</summary>
     public static int PipSum(ReadOnlySpan<int> counts)

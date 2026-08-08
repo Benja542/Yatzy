@@ -14,13 +14,13 @@
         }
 
         <span class="small">
-            P(slag) =
+            P(@GoalLabel) =
             <strong>@Format.SmartPercent(Node.Value)</strong>
         </span>
 
         @if (Node.IsHit)
         {
-            <span class="badge badge--hit">slaget er i hus</span>
+            <span class="badge badge--hit">i hus</span>
         }
 
         @if (Node.RerollsLeft > 0)
@@ -36,7 +36,7 @@
         <ul>
             @foreach (var child in Node.Children)
             {
-                <TreeNodeView Node="child" />
+                <TreeNodeView Node="child" GoalLabel="@GoalLabel" />
             }
             @if (Node.TruncatedChildren > 0)
             {
@@ -53,4 +53,7 @@
     [Parameter, EditorRequired] public OutcomeTreeNode Node { get; set; } = default!;
 
     [Parameter] public bool IsRoot { get; set; }
+
+    /// <summary>Hvad sandsynligheden i knuden handler om, fx "maks point".</summary>
+    [Parameter] public string GoalLabel { get; set; } = "slag";
 }

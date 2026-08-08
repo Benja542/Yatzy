@@ -7,9 +7,8 @@
 <h1>Udfaldstræ</h1>
 <p class="lead">
     Sandsynligheden for et slag kan regnes ud ved at tegne alle udfald op som et træ og
-    folde det sammen bagfra. Firkanterne herunder er hænder; under hver hånd står det bedste
-    valg af terninger at beholde, og grenene er de mulige udfald af næste kast med deres
-    sandsynlighed.
+    folde det sammen bagfra. Sæt hånden op, markér hvilke terninger du vil beholde, og
+    se hvad grenen er værd - som standard er målet <b>maks point</b> i slaget.
 </p>
 
 <div class="card">
@@ -21,6 +20,14 @@
                 {
                     <option value="@((int)category)">@Categories.DanishName(category)</option>
                 }
+            </select>
+        </label>
+
+        <label class="field">
+            Mål
+            <select value="@((int)_goal)" @onchange="OnGoalChanged">
+                <option value="@((int)ScoreGoal.MaxPoints)">maks point (@Categories.MaxScore(_category))</option>
+                <option value="@((int)ScoreGoal.AnyPoints)">mindst 1 point</option>
             </select>
         </label>
 
@@ -48,42 +55,64 @@
         @for (var i = 0; i < YatzyRules.DiceCount; i++)
         {
             var index = i;
-            <Die Value="_dice[index]" OnClick="() => Bump(index)" />
+            <div class="die-column">
+                <Die Value="_dice[index]" Held="_kept[index]" OnClick="() => ToggleKeep(index)" />
+                <button type="button" class="btn btn--tiny" @onclick="() => Bump(index)"
+                        title="Skift øjenværdi">øjne +</button>
+            </div>
         }
     </div>
     <div class="toolbar">
-        <span class="small muted">Klik på en terning for at tælle den op.</span>
+        <span class="small muted">Klik på en terning for at beholde den. "øjne +" tæller den op.</span>
         <button class="btn btn--tiny" @onclick="RandomDice">Slå tilfældigt</button>
         <button class="btn btn--tiny" disabled="@(!Game.HasRolled)" @onclick="FromGame">Hent fra spillet</button>
+        <button class="btn btn--tiny" @onclick="UseBestKeep">Brug den bedste markering</button>
+        <button class="btn btn--tiny" @onclick="ClearKeep">Behold ingen</button>
     </div>
 </div>
 
 <div class="card">
     <div class="stat-row">
         <div class="stat">
-            <div class="stat__label">P(@Categories.DanishName(_category))</div>
+            <div class="stat__label">P(@ScoreGoals.DanishName(_goal))</div>
             <div class="stat__value">@Format.SmartPercent(RootProbability)</div>
         </div>
         <div class="stat">
-            <div class="stat__label">Point nu</div>
-            <div class="stat__value">@YatzyRules.Score(_category, Counts)</div>
+            <div class="stat__label">Point nu / maks</div>
+            <div class="stat__value">
+                @YatzyRules.Score(_category, Counts)<span class="muted small"> / @Categories.MaxScore(_category)</span>
+            </div>
         </div>
         <div class="stat">
-            <div class="stat__label">Beholder</div>
+            <div class="stat__label">Du beholder</div>
             <div class="stat__value" style="font-size:1rem;padding-top:.4rem">
-                <MiniDice Dice="BestKeep" Kept="true" EmptyText="alle kastes om" />
+                <MiniDice Dice="KeptDice" Kept="true" EmptyText="ingen - alle kastes om" />
             </div>
+        </div>
+        <div class="stat">
+            <div class="stat__label">Bedst mulige</div>
+            <div class="stat__value">@Format.SmartPercent(BestProbability)</div>
         </div>
     </div>
 
+    @if (_rerolls > 0 && BestProbability - RootProbability > 1e-9)
+    {
+        <p class="small muted">
+            Med den bedste markering (<MiniDice Dice="BestKeep" Kept="true" EmptyText="ingen" />)
+            ville sandsynligheden være @Format.SmartPercent(BestProbability) -
+            din markering koster @Format.SmartPercent(BestProbability - RootProbability).
+        </p>
+    }
+
     <ul class="tree">
-        <TreeNodeView Node="RootNode" IsRoot="true" />
+        <TreeNodeView Node="RootNode" IsRoot="true" GoalLabel="@ScoreGoals.DanishName(_goal)" />
     </ul>
 
     <p class="small muted" style="margin-top:.75rem">
+        Roden bruger din markering; længere nede i træet spilles der optimalt efter slaget.
         Der vises kun de @_maxChildren mest sandsynlige grene pr. knude - resten er talt med i
         sandsynligheden, men klippet væk for overskuelighedens skyld. Hele træet for dette slag
-        består af @Format.Integer(Solution.EdgeCount) beregnede kanter fordelt på
+        og mål består af @Format.Integer(Solution.EdgeCount) beregnede kanter fordelt på
         @Format.Integer(DiceCatalog.Instance.FullStateCount) forskellige hænder og
         @Format.Integer(DiceCatalog.Instance.KeepCount) "behold"-mængder.
     </p>
@@ -99,12 +128,18 @@
     {
         <p class="small muted">
             Hver række er én måde at dele hånden på. Sandsynligheden er værdien af den gren i
-            træet, altså P(slaget slås) hvis man beholder netop de terninger og derefter spiller
-            optimalt. Den øverste række er den maks-værdi udfaldstræet vælger.
+            træet, altså P(@ScoreGoals.DanishName(_goal)) hvis man beholder netop de terninger og
+            derefter spiller optimalt. Din markering er fremhævet.
         </p>
         var allOptions = Solution.RankKeeps(StateId, _rerolls);
         var best = allOptions.Count > 0 ? allOptions[0].Probability : 1d;
         var options = allOptions.Take(MaxKeepRows).ToList();
+        var mine = KeptCounts;
+        var myKeepId = DiceCatalog.Instance.KeepId(mine);
+        if (options.All(option => option.KeepId != myKeepId))
+        {
+            options.Add(allOptions.First(option => option.KeepId == myKeepId));
+        }
         <div class="table-scroll">
             <table>
                 <thead>
@@ -112,15 +147,21 @@
                         <th>Behold</th>
                         <th class="num">Antal terninger</th>
                         <th class="num">Kastes om</th>
-                        <th class="num">P(slaget slås)</th>
+                        <th class="num">P(@ScoreGoals.DanishName(_goal))</th>
                         <th class="bar-cell"></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var option in options)
                     {
-                        <tr>
-                            <td><MiniDice Dice="option.Kept" Kept="true" EmptyText="ingenting" /></td>
+                        <tr class="@(option.KeepId == myKeepId ? "is-mine" : null)">
+                            <td>
+                                <MiniDice Dice="option.Kept" Kept="true" EmptyText="ingenting" />
+                                @if (option.KeepId == myKeepId)
+                                {
+                                    <span class="badge badge--hit">din</span>
+                                }
+                            </td>
                             <td class="num">@option.Kept.Length</td>
                             <td class="num">@(YatzyRules.DiceCount - option.Kept.Length)</td>
                             <td class="num"><strong>@Format.SmartPercent(option.Probability)</strong></td>
@@ -134,10 +175,10 @@
                 </tbody>
             </table>
         </div>
-        @if (allOptions.Count > options.Count)
+        @if (allOptions.Count > MaxKeepRows)
         {
             <p class="small muted">
-                Viser de @options.Count bedste af @allOptions.Count mulige delinger af hånden.
+                Viser de @MaxKeepRows bedste af @allOptions.Count mulige delinger af hånden.
             </p>
         }
     }
@@ -145,10 +186,12 @@
 
 @code {
     private readonly int[] _dice = [1, 2, 3, 4, 6, 6];
+    private readonly bool[] _kept = [false, true, true, true, false, true];
 
     private const int MaxKeepRows = 20;
 
     private Category _category = Category.LargeStraight;
+    private ScoreGoal _goal = ScoreGoal.MaxPoints;
     private int _rerolls = 2;
     private int _maxChildren = 5;
 
@@ -156,20 +199,57 @@
 
     private int StateId => DiceCatalog.Instance.FullStateId(Counts);
 
-    private CategorySolution Solution => Solver.Solve(_category);
+    private CategorySolution Solution => Solver.Solve(_category, _goal);
 
-    private double RootProbability => Solution.Probability(StateId, _rerolls);
+    private int[] KeptDice => Enumerable.Range(0, YatzyRules.DiceCount)
+        .Where(i => _kept[i])
+        .Select(i => _dice[i])
+        .ToArray();
 
-    private OutcomeTreeNode RootNode => Solution.BuildTree(StateId, _rerolls, _maxChildren);
+    private int[] KeptCounts => YatzyRules.CountFaces(KeptDice);
+
+    /// <summary>Sandsynligheden med spillerens egen markering.</summary>
+    private double RootProbability => _rerolls > 0
+        ? Solution.ProbabilityWithKeep(DiceCatalog.Instance.KeepId(KeptCounts), _rerolls)
+        : Solution.Probability(StateId, _rerolls);
+
+    /// <summary>Sandsynligheden med den bedst mulige markering.</summary>
+    private double BestProbability => Solution.Probability(StateId, _rerolls);
+
+    private OutcomeTreeNode RootNode =>
+        Solution.BuildTree(StateId, _rerolls, _maxChildren, _rerolls > 0 ? KeptCounts : null);
 
     private int[] BestKeep => _rerolls > 0
         ? DiceCatalog.ToDice(DiceCatalog.Instance.Keep(Solution.BestKeepId(StateId, _rerolls)))
         : [];
 
+    private void ToggleKeep(int index) => _kept[index] = !_kept[index];
+
+    private void ClearKeep() => Array.Clear(_kept);
+
+    /// <summary>Markerer præcis de terninger udfaldstræet ville beholde.</summary>
+    private void UseBestKeep()
+    {
+        var remaining = DiceCatalog.Instance.Keep(Solution.BestKeepId(StateId, System.Math.Max(1, _rerolls))).ToArray();
+        for (var i = 0; i < _dice.Length; i++)
+        {
+            var face = _dice[i];
+            if (remaining[face - 1] > 0)
+            {
+                remaining[face - 1]--;
+                _kept[i] = true;
+            }
+            else
+            {
+                _kept[i] = false;
+            }
+        }
+    }
+
     private void Bump(int index)
     {
         _dice[index] = _dice[index] % YatzyRules.Faces + 1;
-        Array.Sort(_dice);
+        SortDice();
     }
 
     private void RandomDice()
@@ -180,7 +260,7 @@
             _dice[i] = random.Next(1, YatzyRules.Faces + 1);
         }
 
-        Array.Sort(_dice);
+        SortDice();
     }
 
     private void FromGame()
@@ -188,10 +268,25 @@
         for (var i = 0; i < _dice.Length; i++)
         {
             _dice[i] = Game.Dice[i];
+            _kept[i] = Game.Held[i];
         }
 
-        Array.Sort(_dice);
         _rerolls = System.Math.Min(Game.RerollsLeft, 2);
+        SortDice();
+    }
+
+    /// <summary>Sorterer terningerne og lader markeringen følge med.</summary>
+    private void SortDice()
+    {
+        var order = Enumerable.Range(0, YatzyRules.DiceCount)
+            .OrderBy(i => _dice[i])
+            .ThenByDescending(i => _kept[i])
+            .ToArray();
+
+        var dice = order.Select(i => _dice[i]).ToArray();
+        var kept = order.Select(i => _kept[i]).ToArray();
+        Array.Copy(dice, _dice, dice.Length);
+        Array.Copy(kept, _kept, kept.Length);
     }
 
     private void OnCategoryChanged(ChangeEventArgs args)
@@ -199,6 +294,14 @@
         if (int.TryParse(args.Value?.ToString(), out var value))
         {
             _category = (Category)value;
+        }
+    }
+
+    private void OnGoalChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            _goal = (ScoreGoal)value;
         }
     }
 

@@ -8,8 +8,9 @@
 <h1>Spil yatzy</h1>
 <p class="lead">
     Seks terninger, tre kast pr. tur, 20 slag. Spillerne skiftes til at tage en tur, og
-    under terningerne står sandsynligheden for at nå hvert af de slag den spiller har
-    tilbage - både regnet eksakt på udfaldstræet og estimeret med en simulering.
+    under terningerne står sandsynligheden for at få <b>maks point</b> i hvert af de slag
+    der er tilbage - regnet ud fra præcis de terninger du har markeret, både eksakt på
+    udfaldstræet og estimeret med en simulering.
 </p>
 
 <div class="grid grid--play">
@@ -183,28 +184,25 @@
             }
             else
             {
-                <p class="small muted">
-                    @if (Game.HasRolled)
-                    {
-                        <text>
-                            Ud fra terningerne på bordet og @Game.RollsLeft omkast tilbage, når du spiller
-                            det pågældende slag så godt som muligt.
-                        </text>
-                    }
-                    else
-                    {
-                        <text>Før første kast: sandsynligheden for at nå slaget i løbet af hele turen.</text>
-                    }
-                </p>
+                <p class="small muted">@ProbabilityIntro</p>
+
+                @if (Game.HasRolled && Game.RollsLeft > 0)
+                {
+                    <div class="toolbar" style="margin-bottom:.6rem">
+                        <span class="small">Du beholder</span>
+                        <MiniDice Dice="HeldDice" Kept="true" EmptyText="ingen" />
+                        <span class="small muted">@KeepHint</span>
+                    </div>
+                }
 
                 <div class="toolbar" style="margin-bottom:.6rem">
                     <label class="field">
                         Simuleringer pr. slag
                         <select value="@_trials" @onchange="OnTrialsChanged">
-                            <option value="1000">1.000</option>
                             <option value="5000">5.000</option>
                             <option value="25000">25.000</option>
                             <option value="100000">100.000</option>
+                            <option value="500000">500.000</option>
                         </select>
                     </label>
                     <button class="btn" disabled="@_running" @onclick="() => RunMonteCarlo()">
@@ -212,8 +210,12 @@
                     </button>
                     <label class="small">
                         <input type="checkbox" checked="@_auto" @onchange="OnAutoChanged" />
-                        kør automatisk efter hvert kast
+                        kør automatisk
                     </label>
+                    <span class="small muted">
+                        Maks point er sjældent, så små sandsynligheder kræver mange simuleringer
+                        før estimatet bliver skarpt.
+                    </span>
                 </div>
 
                 @if (_running)
@@ -226,17 +228,18 @@
                         <thead>
                             <tr>
                                 <th>Slag</th>
-                                <th class="num">Point nu</th>
-                                <th class="num" title="Eksakt beregning ved at folde udfaldstræet sammen bagfra">
+                                <th class="num" title="Point med de terninger der ligger nu">Nu</th>
+                                <th class="num" title="Den højst mulige score i slaget">Maks</th>
+                                <th class="num" title="Eksakt: udfaldstræet foldet sammen bagfra, med din markering låst fast i første omkast">
                                     Udfaldstræ
                                 </th>
-                                <th class="num" title="Estimat fra tilfældige kast med samme strategi, med 95 % konfidensinterval (Wilson)">
+                                <th class="num" title="Estimat fra tilfældige kast med samme markering og samme mål, med 95 % konfidensinterval (Wilson)">
                                     Monte Carlo
                                 </th>
-                                <th class="num" title="Analytisk formel for ét enkelt kast med alle seks terninger">
-                                    Analytisk<br />1 kast
+                                <th class="num" title="Sandsynligheden hvis du i stedet beholdt det bedst mulige for netop dette slag">
+                                    Bedst mulige
                                 </th>
-                                <th>Behold</th>
+                                <th>Behold i stedet</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -245,12 +248,13 @@
                                 <tr>
                                     <td title="@Categories.Description(row.Category)">
                                         @Categories.DanishName(row.Category)
-                                        @if (row.AlreadyHit)
+                                        @if (row.AlreadyAchieved)
                                         {
-                                            <span class="badge badge--hit" title="Slaget er allerede i hus">i hus</span>
+                                            <span class="badge badge--hit" title="Maks point er allerede i hus">i hus</span>
                                         }
                                     </td>
                                     <td class="num">@row.CurrentScore</td>
+                                    <td class="num muted">@row.MaxScore</td>
                                     <td class="num"><strong>@Format.SmartPercent(row.TreeProbability)</strong></td>
                                     <td class="num">
                                         @if (_monteCarlo.TryGetValue(row.Category, out var mc))
@@ -263,14 +267,16 @@
                                             <span class="muted">-</span>
                                         }
                                     </td>
-                                    <td class="num muted" title="@row.Analytic.Probability.ToString()">
-                                        @Format.SmartPercent(row.Analytic.Value)
-                                    </td>
+                                    <td class="num muted">@Format.SmartPercent(row.BestProbability)</td>
                                     <td>
-                                        @if (Game.RollsLeft > 0 && Game.HasRolled)
+                                        @if (Game.RollsLeft > 0 && Game.HasRolled && row.LostByKeep > 1e-9)
                                         {
                                             <MiniDice Dice="row.BestKeep" Kept="true" EmptyText="kast alle om" />
                                             <button class="btn btn--tiny" @onclick="() => UseKeep(row.BestKeep)">Brug</button>
+                                        }
+                                        else if (Game.RollsLeft > 0 && Game.HasRolled)
+                                        {
+                                            <span class="muted small">din markering er den bedste</span>
                                         }
                                     </td>
                                 </tr>
@@ -280,10 +286,12 @@
                 </div>
 
                 <p class="small muted" style="margin-top:.6rem">
-                    "Udfaldstræ" og "Monte Carlo" beskriver den samme hændelse og skal derfor give
-                    samme tal - forskellen er kun simuleringens usikkerhed.
-                    "Analytisk" er den lukkede formel for ét enkelt kast og er derfor et andet - og lavere - tal.
-                    <a href="sandsynligheder">Se hele tabellen og formlerne</a>.
+                    "Udfaldstræ" og "Monte Carlo" svarer på præcis samme spørgsmål: beholder du dine
+                    markerede terninger og spiller resten af turen så godt som muligt efter netop det
+                    slag, hvor ofte ender du så med maks point? Den første er regnet eksakt, den anden
+                    er et estimat - de skal give samme tal på nær simuleringens usikkerhed.
+                    <a href="sandsynligheder">Se de analytiske formler</a>, eller
+                    <a href="udfaldstrae">tegn træet op</a> for en enkelt hånd.
                 </p>
             }
         </div>
@@ -302,7 +310,7 @@
     private readonly AutoPlayer _adviser = new();
 
     private IReadOnlyList<ProbabilityRow> _rows = [];
-    private long _trials = 5_000;
+    private long _trials = 25_000;
     private bool _auto = true;
     private bool _running;
     private bool _showSetup;
@@ -330,9 +338,28 @@
         Refresh();
     }
 
+    /// <summary>Terningeøjnene for de terninger spilleren har markeret.</summary>
+    private int[] HeldDice => Game.HasRolled
+        ? Enumerable.Range(0, YatzyRules.DiceCount).Where(i => Game.Held[i]).Select(i => Game.Dice[i]).ToArray()
+        : [];
+
+    /// <summary>Tællevektoren for markeringen, eller null når den ikke betyder noget.</summary>
+    private int[]? HeldCounts => Game.HasRolled && Game.RollsLeft > 0 ? YatzyRules.CountFaces(HeldDice) : null;
+
+    private string KeepHint =>
+        $"og kaster {YatzyRules.DiceCount - HeldDice.Length} om. " +
+        "Klik på terningerne for at ændre markeringen.";
+
+    private string ProbabilityIntro => Game.HasRolled
+        ? $"Sandsynligheden for at ende med maks point i slaget, hvis du beholder de markerede " +
+          $"terninger og bruger dine {Game.RollsLeft} resterende kast så godt som muligt."
+        : "Før første kast: sandsynligheden for at få maks point i løbet af hele turen.";
+
     private void Hold(int index)
     {
         Game.ToggleHold(index);
+        // Tabellen regnes ud fra markeringen, så den skal opdateres med det samme.
+        Refresh();
     }
 
     private void UseKeep(IEnumerable<int> dice)
@@ -344,6 +371,7 @@
         }
 
         Game.ApplyKeep(counts);
+        Refresh();
     }
 
     private void UseSuggestedKeep() => UseKeep(SuggestedKeep);
@@ -385,7 +413,9 @@
         _rows = ProbabilityReport.Build(
             Game.Sheet.Open,
             Game.HasRolled ? Game.Counts : null,
-            Game.RerollsLeft);
+            HeldCounts,
+            Game.RerollsLeft,
+            ScoreGoal.MaxPoints);
 
         if (runMonteCarlo && _auto)
         {
@@ -405,14 +435,15 @@
         _monteCarlo.Clear();
 
         var counts = Game.HasRolled ? Game.Counts : null;
+        var keep = HeldCounts;
         var rerolls = Game.HasRolled ? Game.RerollsLeft : Game.RerollsLeft - 1;
         var open = Game.Sheet.Open.ToList();
         const long chunk = 2_000;
 
         for (var i = 0; i < open.Count; i++)
         {
-            var solution = Solver.Solve(open[i]);
-            var estimator = new MonteCarloEstimator(solution, counts, rerolls);
+            var solution = Solver.Solve(open[i], ScoreGoal.MaxPoints);
+            var estimator = new MonteCarloEstimator(solution, counts, rerolls, seed: null, firstKeep: keep);
 
             while (estimator.Trials < _trials)
             {

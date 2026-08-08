@@ -421,6 +421,22 @@ td .badge {
     border-style: solid;
 }
 
+/* Terning med en lille knap under - bruges på udfaldstræ-siden. */
+.die-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .25rem;
+}
+
+tr.is-mine td {
+    background: var(--accent-soft);
+}
+
+tr.is-mine:hover td {
+    background: var(--accent-soft);
+}
+
 .player-fields {
     display: flex;
     gap: .75rem;

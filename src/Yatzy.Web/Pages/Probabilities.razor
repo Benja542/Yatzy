@@ -6,13 +6,21 @@
 
 <h1>Sandsynligheder for de 20 slag</h1>
 <p class="lead">
-    Den samme sandsynlighed regnet ud på tre måder: med en lukket formel, ved at folde
-    udfaldstræet sammen, og ved at kaste terninger tilfældigt rigtig mange gange.
+    Den samme sandsynlighed regnet ud på tre måder: analytisk med kombinatorik, ved at
+    folde udfaldstræet sammen, og ved at kaste terninger tilfældigt rigtig mange gange.
     De to første er eksakte, den sidste er et estimat med en usikkerhed man kan se.
+    Vælg om målet er maks point i slaget eller bare at få point overhovedet.
 </p>
 
 <div class="card">
     <div class="toolbar">
+        <label class="field">
+            Mål
+            <select value="@((int)_goal)" @onchange="OnGoalChanged">
+                <option value="@((int)ScoreGoal.MaxPoints)">maks point</option>
+                <option value="@((int)ScoreGoal.AnyPoints)">mindst 1 point</option>
+            </select>
+        </label>
         <label class="field">
             Antal kast i turen
             <select value="@_rolls" @onchange="OnRollsChanged">
@@ -45,7 +53,8 @@
             <thead>
                 <tr>
                     <th>Slag</th>
-                    <th class="num" title="Lukket formel for ét enkelt kast med seks terninger">Analytisk (1 kast)</th>
+                    <th class="num" title="Den højst mulige score i slaget">Maks</th>
+                    <th class="num" title="Eksakt beregning for ét enkelt kast med seks terninger">Analytisk (1 kast)</th>
                     <th class="num">Som brøk</th>
                     <th class="num" title="Eksakt, foldet sammen bagfra i udfaldstræet">Udfaldstræ (@_rolls kast)</th>
                     <th class="num">Monte Carlo</th>
@@ -57,11 +66,12 @@
             <tbody>
                 @foreach (var category in Categories.All)
                 {
-                    var analytic = AnalyticProbability.Compute(category);
-                    var tree = Solver.Solve(category).ProbabilityFromScratch(_rolls);
+                    var analytic = AnalyticProbability.Compute(category, _goal);
+                    var tree = Solver.Solve(category, _goal).ProbabilityFromScratch(_rolls);
                     _monteCarlo.TryGetValue(category, out var mc);
                     <tr>
                         <td title="@Categories.Description(category)">@Categories.DanishName(category)</td>
+                        <td class="num muted">@Categories.MaxScore(category)</td>
                         <td class="num">@Format.SmartPercent(analytic.Value)</td>
                         <td class="num mono muted">@analytic.Probability</td>
                         <td class="num"><strong>@Format.SmartPercent(tree)</strong></td>
@@ -84,7 +94,7 @@
     @if (_rolls == 1)
     {
         <p class="small muted" style="margin-top:.6rem">
-            Med kun ét kast beskriver den analytiske formel og udfaldstræet præcis samme hændelse,
+            Med kun ét kast beskriver den analytiske beregning og udfaldstræet præcis samme hændelse,
             og de to kolonner er derfor identiske ned til sidste decimal. Det er den bedste kontrol
             af at begge udregninger er rigtige.
         </p>
@@ -106,7 +116,7 @@
         Klik på et slag for at se leddene.
     </p>
 
-    @foreach (var result in AnalyticProbability.All())
+    @foreach (var result in AnalyticProbability.All(_goal))
     {
         <details class="formula">
             <summary>
@@ -162,8 +172,10 @@
                 <td>Analytisk</td>
                 <td class="small" style="white-space:normal">
                     Tæller de gunstige udfald med kombinatorik - komplementærreglen,
-                    inklusion-eksklusion og optælling over kastets "form". Regnes i brøker,
-                    så resultatet er helt uden afrundingsfejl.
+                    inklusion-eksklusion og optælling over kastets "form". Til maks point er
+                    formen ikke nok (to par giver kun 22 med 6-6-5-5), så der tælles direkte
+                    over de hænder der rammer maksimum. Alt regnes i brøker, så resultatet er
+                    helt uden afrundingsfejl.
                 </td>
                 <td>Ja</td>
             </tr>
@@ -192,6 +204,7 @@
 @code {
     private readonly Dictionary<Category, MonteCarloResult> _monteCarlo = [];
 
+    private ScoreGoal _goal = ScoreGoal.MaxPoints;
     private int _rolls = 3;
     private long _trials = 50_000;
     private bool _running;
@@ -210,7 +223,7 @@
         for (var i = 0; i < Categories.All.Length; i++)
         {
             var category = Categories.All[i];
-            var estimator = new MonteCarloEstimator(Solver.Solve(category), null, _rolls - 1);
+            var estimator = new MonteCarloEstimator(Solver.Solve(category, _goal), null, _rolls - 1);
 
             while (estimator.Trials < _trials)
             {
@@ -230,6 +243,17 @@
         _running = false;
         _progress = 100;
         StateHasChanged();
+    }
+
+    private void OnGoalChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            _goal = (ScoreGoal)value;
+            _monteCarlo.Clear();
+            _runId++;
+            _running = false;
+        }
     }
 
     private void OnRollsChanged(ChangeEventArgs args)

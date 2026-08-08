@@ -1,4 +1,5 @@
 using System.Numerics;
+using Yatzy.Core.Dice;
 using Yatzy.Core.Math;
 using Yatzy.Core.Rules;
 
@@ -14,6 +15,7 @@ public readonly record struct AnalyticTerm(string Label, long Outcomes, string E
 /// Den analytisk beregnede sandsynlighed for et slag i ét kast med seks terninger.
 /// </summary>
 /// <param name="Category">Slaget.</param>
+/// <param name="Goal">Hvad der tælles som en succes.</param>
 /// <param name="Probability">Den eksakte sandsynlighed som uforkortelig brøk.</param>
 /// <param name="Favourable">Antal gunstige udfald.</param>
 /// <param name="Total">Antal mulige udfald (6^6 = 46.656).</param>
@@ -22,6 +24,7 @@ public readonly record struct AnalyticTerm(string Label, long Outcomes, string E
 /// <param name="Terms">Leddene i udregningen.</param>
 public sealed record AnalyticResult(
     Category Category,
+    ScoreGoal Goal,
     Fraction Probability,
     long Favourable,
     long Total,
@@ -60,25 +63,39 @@ public static class AnalyticProbability
     private const int Faces = YatzyRules.Faces;
     private const int DiceCount = YatzyRules.DiceCount;
 
+    /// <summary>Højst så mange enkeltled vises i optællingen - resten samles i ét led.</summary>
+    private const int MaxTermsShown = 6;
+
     /// <summary>Antal mulige (ordnede) udfald af ét kast med seks terninger: 6^6 = 46.656.</summary>
     public static long TotalOutcomes { get; } = Pow(Faces, DiceCount);
 
     /// <summary>Beregner sandsynligheden for alle 20 slag.</summary>
-    public static IReadOnlyList<AnalyticResult> All() => Categories.All.Select(Compute).ToList();
+    public static IReadOnlyList<AnalyticResult> All(ScoreGoal goal = ScoreGoal.AnyPoints) =>
+        Categories.All.Select(category => Compute(category, goal)).ToList();
 
     /// <summary>Beregner sandsynligheden for ét slag.</summary>
-    public static AnalyticResult Compute(Category category) => category switch
+    public static AnalyticResult Compute(Category category, ScoreGoal goal = ScoreGoal.AnyPoints)
     {
-        Category.Ones or Category.Twos or Category.Threes
-            or Category.Fours or Category.Fives or Category.Sixes => Upper(category),
-        Category.SmallStraight => Straight(category, 1, 5),
-        Category.LargeStraight => Straight(category, 2, 6),
-        Category.FullStraight => Straight(category, 1, 6),
-        Category.Chance => Certain(category),
-        _ => ByShape(category),
-    };
+        // For straights og yatzy er pointtallet fast, så "giver point" og "giver maks
+        // point" er den samme hændelse - og de lukkede formler gælder begge mål.
+        if (goal == ScoreGoal.MaxPoints && !ScoreGoals.AreEquivalent(category))
+        {
+            return ByEnumeration(category);
+        }
 
-    private static AnalyticResult Upper(Category category)
+        return category switch
+        {
+            Category.Ones or Category.Twos or Category.Threes
+                or Category.Fours or Category.Fives or Category.Sixes => Upper(category, goal),
+            Category.SmallStraight => Straight(category, goal, 1, 5),
+            Category.LargeStraight => Straight(category, goal, 2, 6),
+            Category.FullStraight => Straight(category, goal, 1, 6),
+            Category.Chance => Certain(category),
+            _ => ByShape(category, goal),
+        };
+    }
+
+    private static AnalyticResult Upper(Category category, ScoreGoal goal)
     {
         var face = Categories.UpperFace(category);
         var missing = Pow(Faces - 1, DiceCount);
@@ -92,6 +109,7 @@ public static class AnalyticProbability
 
         return new AnalyticResult(
             category,
+            goal,
             new Fraction(favourable, TotalOutcomes),
             favourable,
             TotalOutcomes,
@@ -100,7 +118,7 @@ public static class AnalyticProbability
             terms);
     }
 
-    private static AnalyticResult Straight(Category category, int fromFace, int toFace)
+    private static AnalyticResult Straight(Category category, ScoreGoal goal, int fromFace, int toFace)
     {
         var required = toFace - fromFace + 1;
         var terms = new List<AnalyticTerm>();
@@ -119,6 +137,7 @@ public static class AnalyticProbability
 
         return new AnalyticResult(
             category,
+            goal,
             new Fraction(favourable, TotalOutcomes),
             favourable,
             TotalOutcomes,
@@ -130,6 +149,7 @@ public static class AnalyticProbability
 
     private static AnalyticResult Certain(Category category) =>
         new(category,
+            ScoreGoal.AnyPoints,
             Fraction.One,
             TotalOutcomes,
             TotalOutcomes,
@@ -144,7 +164,7 @@ public static class AnalyticProbability
     /// <c>6! / ((6−k)! · ∏ m_j!) · 6! / ∏ λ_i!</c>, hvor k er antallet af dele og
     /// m_j er hvor mange dele der har samme størrelse.
     /// </summary>
-    private static AnalyticResult ByShape(Category category)
+    private static AnalyticResult ByShape(Category category, ScoreGoal goal)
     {
         var terms = new List<AnalyticTerm>();
         long favourable = 0;
@@ -166,12 +186,70 @@ public static class AnalyticProbability
 
         return new AnalyticResult(
             category,
+            goal,
             new Fraction(favourable, TotalOutcomes),
             favourable,
             TotalOutcomes,
             "Optælling over partitioner",
             $"P = ({string.Join(" + ", terms.Select(t => t.Outcomes.ToString("N0")))}) / {TotalOutcomes:N0} " +
             $"= {favourable:N0} / {TotalOutcomes:N0}",
+            terms);
+    }
+
+    /// <summary>
+    /// Maks point kan ikke afgøres ud fra kastets form alene - der skal helt bestemte
+    /// øjenværdier til (to par giver fx kun 22 med 6-6-5-5). Derfor tælles de gunstige
+    /// hænder direkte. Optællingen er stadig eksakt: hver hånd vægtes med sin
+    /// multinomialkoefficient, altså antallet af ordnede kast der giver netop den hånd.
+    /// </summary>
+    private static AnalyticResult ByEnumeration(Category category)
+    {
+        var catalog = DiceCatalog.Instance;
+        var maxScore = Categories.MaxScore(category);
+        var terms = new List<AnalyticTerm>();
+        long favourable = 0;
+        var hands = 0;
+
+        for (var stateId = 0; stateId < catalog.FullStateCount; stateId++)
+        {
+            var counts = catalog.FullState(stateId);
+            if (YatzyRules.Score(category, counts) < maxScore)
+            {
+                continue;
+            }
+
+            var outcomes = catalog.FreshRollCount(stateId);
+            favourable += outcomes;
+            hands++;
+
+            if (terms.Count < MaxTermsShown)
+            {
+                var dice = string.Join("-", DiceCatalog.ToDice(counts));
+                terms.Add(new AnalyticTerm(
+                    dice,
+                    outcomes,
+                    $"6! / (produktet af fakulteterne) = {outcomes:N0} ordnede kast"));
+            }
+        }
+
+        if (hands > terms.Count)
+        {
+            var shown = terms.Sum(term => term.Outcomes);
+            terms.Add(new AnalyticTerm(
+                $"+ {hands - terms.Count} andre hænder",
+                favourable - shown,
+                $"resten af de {hands:N0} hænder der giver {maxScore} point"));
+        }
+
+        return new AnalyticResult(
+            category,
+            ScoreGoal.MaxPoints,
+            new Fraction(favourable, TotalOutcomes),
+            favourable,
+            TotalOutcomes,
+            "Optælling over alle hænder",
+            $"P = {favourable:N0} / {TotalOutcomes:N0} - summen over de {hands:N0} hænder " +
+            $"der giver den maksimale score på {maxScore} point",
             terms);
     }
 
@@ -247,7 +325,7 @@ public static class AnalyticProbability
     /// Kontroltælling: gennemløber alle 46.656 ordnede udfald og tæller hvor mange
     /// der giver point i slaget. Bruges til at efterprøve formlerne.
     /// </summary>
-    public static long BruteForceCount(Category category)
+    public static long BruteForceCount(Category category, ScoreGoal goal = ScoreGoal.AnyPoints)
     {
         Span<int> counts = stackalloc int[Faces];
         Span<int> dice = stackalloc int[DiceCount];
@@ -261,7 +339,7 @@ public static class AnalyticProbability
                 counts[dice[i]]++;
             }
 
-            if (YatzyRules.IsHit(category, counts))
+            if (YatzyRules.IsAchieved(category, goal, counts))
             {
                 hits++;
             }

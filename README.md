@@ -7,26 +7,35 @@ forskellige måder:
 
 | Metode | Hvad den regner ud | Eksakt? |
 | --- | --- | --- |
-| **Analytisk formel** | Sandsynligheden i ét enkelt kast, med kombinatorik og eksakt brøkregning | Ja |
+| **Analytisk** | Sandsynligheden i ét enkelt kast, med kombinatorik og eksakt brøkregning | Ja |
 | **Udfaldstræ** | Sandsynligheden i en hel tur med omkast, ved at folde træet af kast og valg sammen bagfra | Ja |
 | **Monte Carlo** | Et estimat af det samme, fundet ved at kaste terninger tilfældigt mange gange | Nej — med 95 % konfidensinterval |
 
 De to eksakte metoder kontrollerer hinanden (med ét kast skal de give samme tal ned
 til sidste decimal), og simuleringen kontrollerer dem begge.
 
+Alle tre metoder besvarer det samme, meget konkrete spørgsmål:
+
+> **Hvis jeg beholder præcis de terninger jeg har markeret og bruger resten af turen
+> så godt som muligt, hvor ofte ender jeg så med den maksimale score i slaget?**
+
+Målet kan skiftes til "mindst 1 point", og markeringen kan udelades — så regnes der
+med den bedst mulige markering i stedet.
+
 ## Kør det
 
 ```bash
 dotnet run --project src/Yatzy.Web        # brugerfladen — åbn adressen der skrives i konsollen
-dotnet test                               # 102 enhedstests
+dotnet test                               # 117 enhedstests
 ```
 
 Kommandolinjeværktøjet er til de tunge kørsler, hvor browseren bliver for langsom:
 
 ```bash
-dotnet run --project src/Yatzy.Cli -- tabel --kast 200000   # de tre metoder side om side
-dotnet run --project src/Yatzy.Cli -- analytisk             # formlerne og deres led, skrevet ud
-dotnet run --project src/Yatzy.Cli -- spil --spil 100000    # simulerer hele spil
+dotnet run --project src/Yatzy.Cli -- tabel --kast 200000       # de tre metoder side om side
+dotnet run --project src/Yatzy.Cli -- tabel --maal point        # mål: bare at få point
+dotnet run --project src/Yatzy.Cli -- analytisk                 # udregningerne og deres led
+dotnet run --project src/Yatzy.Cli -- spil --spil 100000        # simulerer hele spil
 ```
 
 ## Brugerfladen
@@ -34,15 +43,17 @@ dotnet run --project src/Yatzy.Cli -- spil --spil 100000    # simulerer hele spi
 Blazor WebAssembly — alt regnes i browseren, der er ingen server.
 
 * **Spil** — 1-6 spillere der skiftes til at tage en tur på det samme sæt terninger,
-  med én kolonne pr. spiller på blokken. Under terningerne står sandsynligheden for
-  hvert af de slag *den spiller der har tur* har åbne, og hvilke terninger der skal
-  beholdes for at maksimere den. Monte Carlo-estimatet kører i baggrunden og opdaterer
-  sig selv. Når alle blokke er fulde, vises slutstillingen med vinderen.
-* **Sandsynligheder** — hele tabellen for 1, 2 eller 3 kast, med de analytiske formler
-  foldet ud led for led, og en kolonne der siger om den eksakte værdi ligger inden for
-  simuleringens konfidensinterval.
-* **Udfaldstræ** — træet tegnet op for en hånd man selv sammensætter, plus alle 64
-  måder at dele hånden på, rangeret efter hvad de er værd.
+  med én kolonne pr. spiller på blokken. Klik på terningerne for at markere hvilke der
+  beholdes; tabellen under dem viser med det samme sandsynligheden for maks point i
+  hvert åbent slag **ud fra netop den markering** — eksakt fra udfaldstræet og estimeret
+  med Monte Carlo. Kolonnen "Bedst mulige" viser hvad den bedste markering ville give,
+  så man kan se hvad ens valg koster. Når alle blokke er fulde, vises slutstillingen.
+* **Sandsynligheder** — hele tabellen for 1, 2 eller 3 kast og for begge mål, med de
+  analytiske udregninger foldet ud led for led, og en kolonne der siger om den eksakte
+  værdi ligger inden for simuleringens konfidensinterval.
+* **Udfaldstræ** — træet tegnet op for en hånd man selv sammensætter og selv markerer.
+  Roden bruger ens egen markering, resten af træet spilles optimalt. Nedenunder står
+  alle 64 måder at dele hånden på, rangeret efter hvad de er værd, med ens egen fremhævet.
 * **Simulering** — hele spil spillet igennem af en computerspiller, med fordelingen af
   slutscoren og hvor ofte hvert slag rammer.
 * **Regler** — den variant der spilles her.
@@ -107,22 +118,32 @@ med tre klassiske teknikker:
   en partition af 6, fx `4+2` eller `2+2+1+1` — og antallet af kast med formen λ er
   `6!/((6−k)!·∏mⱼ!) · 6!/∏λᵢ!`. De 11 partitioner af 6 dækker tilsammen præcis alle
   46.656 udfald, hvilket testene også tjekker.
+* **Optælling over hænder** når målet er maks point. Formen er ikke nok — to par giver
+  kun 22 med netop 6-6-5-5 — så der summeres i stedet over de af de 462 hænder der
+  rammer maksimum, hver vægtet med sin multinomialkoefficient. Stadig eksakt, bare
+  uden lukket formel.
 
 Resultatet regnes i `Fraction` (BigInteger-brøker), så tabellen kan vise fx `1325/7776`
-uden afrundingsfejl. Alle 20 formler efterprøves i testene mod en optælling af samtlige
-46.656 udfald.
+uden afrundingsfejl. Alle 20 slag efterprøves i testene mod en optælling af samtlige
+46.656 udfald — for begge mål.
 
 ### 2. Udfaldstræ (`OutcomeTreeSolver`)
 
 Rekursionen er en expectimax:
 
 ```
-V(hånd, 0 omkast) = 1 hvis slaget er opfyldt, ellers 0
-V(hånd, r omkast) = max over "behold"-mængder K ⊆ hånd af  Σ P(udfald u) · V(K ∪ u, r−1)
+V(hånd, 0 omkast) = 1 hvis målet er nået, ellers 0
+V(hånd, r omkast) = max over "behold"-mængder K ⊆ hånd af  Q(K, r)
+Q(K, r)           = Σ P(udfald u) · V(K ∪ u, r−1)
 ```
 
 Maks-leddet er spillerens valg, summen er terningernes tilfældighed. Resultatet er den
 eksakte sandsynlighed når man spiller optimalt efter netop det slag.
+
+Har spilleren selv markeret hvilke terninger der skal beholdes, springes maks-leddet
+over i første omkast: så er svaret `Q(min markering, r)` — værdien af netop den gren.
+Det er det tal brugerfladen viser, og `V` bliver i stedet til kolonnen "bedst mulige",
+så man kan se hvad markeringen koster.
 
 Et fuldt udfoldet træ over *ordnede* kast har 46.656 grene pr. kast og op til 64
 beslutninger pr. knude — i størrelsesordenen 10²⁰ blade. To ting skærer det ned til
@@ -136,9 +157,10 @@ under 100.000 kanter pr. slag:
 
 ### 3. Monte Carlo (`MonteCarloEstimator`)
 
-Simuleringen kaster rigtige tilfældige terninger og bruger nøjagtig den strategi
-udfaldstræet har regnet frem til. De to tal beskriver derfor samme hændelse, og
-forskellen er ren simuleringsusikkerhed. Konfidensintervallet er et **Wilson
+Simuleringen kaster rigtige tilfældige terninger. Første omkast bruger spillerens egen
+markering, præcis som `Q` ovenfor; derefter følges den strategi udfaldstræet har regnet
+frem til. De to tal beskriver derfor samme hændelse, og forskellen er ren
+simuleringsusikkerhed. Konfidensintervallet er et **Wilson
 score-interval**, som i modsætning til det simple normalinterval også opfører sig
 fornuftigt når sandsynligheden er meget lille — hvilket den er for yatzy (2,05 % på en
 hel tur).
@@ -155,6 +177,8 @@ omkring **340 point** i gennemsnit og rammer bonussen i ca. **29 %** af spillene
 
 Sandsynligheden for at slå slaget i ét kast, og i en hel tur på tre kast hvor man kun
 går efter netop det slag:
+
+### Mindst 1 point
 
 | Slag | 1 kast | Som brøk | Hel tur (3 kast) |
 | --- | ---: | ---: | ---: |
@@ -178,6 +202,31 @@ De 96,24 % kan tjekkes i hovedet: beholder man alle terninger med den rigtige
 øjenværdi, får hver terning tre uafhængige forsøg, så P = 1 − ((5/6)³)⁶ = 96,243 %.
 Udfaldstræet rammer det tal ned til sidste decimal.
 
+### Maks point
+
+Et helt andet - og noget barskere - billede:
+
+| Slag | Maks | 1 kast | Hel tur (3 kast) |
+| --- | ---: | ---: | ---: |
+| Enere … Seksere | 6 … 36 | 0,0021 % | 0,56 % |
+| Et par | 12 | 26,32 % | 79,84 % |
+| To par | 22 | 4,22 % | 45,53 % |
+| Tre par | 30 | 0,193 % | 8,93 % |
+| Tre ens | 18 | 6,23 % | 49,98 % |
+| Fire ens | 24 | 0,870 % | 20,99 % |
+| Fem ens | 30 | 0,066 % | 5,17 % |
+| Lille/stor straight | 15 / 20 | 5,40 % | 43,72 % |
+| Fuld straight | 21 | 1,54 % | 19,68 % |
+| Hus | 28 | 0,589 % | 18,52 % |
+| Villa | 33 | 0,043 % | 4,23 % |
+| Tårn | 34 | 0,032 % | 3,34 % |
+| Chance | 36 | 0,0021 % | 0,56 % |
+| Yatzy | 100 | 0,0129 % | 2,05 % |
+
+Bemærk at maks i enere er seks 1'ere — lige så svært som en yatzy af 1'ere, og præcis
+lige så svært som maks i chance (seks 6'ere). For straights og yatzy er de to mål den
+samme hændelse, fordi pointtallet er fast; derfor er de rækker uændrede.
+
 ## Projekter
 
 ```
@@ -185,7 +234,7 @@ src/Yatzy.Core    Regler, terningekatalog, de tre sandsynlighedsmodeller,
                   spillere og turskifte, computerspiller
 src/Yatzy.Web     Blazor WebAssembly-brugerfladen
 src/Yatzy.Cli     Kommandolinjeværktøj til store kørsler
-tests/            102 enhedstests
+tests/            117 enhedstests
 ```
 
 ## Udgivelse til GitHub Pages

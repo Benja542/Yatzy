@@ -49,6 +49,7 @@ public sealed class CategorySolution
 
     internal CategorySolution(
         Category category,
+        ScoreGoal goal,
         DiceCatalog catalog,
         double[][] value,
         double[][] keepValue,
@@ -56,6 +57,7 @@ public sealed class CategorySolution
         long edgeCount)
     {
         Category = category;
+        Goal = goal;
         _catalog = catalog;
         Value = value;
         KeepValue = keepValue;
@@ -64,6 +66,9 @@ public sealed class CategorySolution
     }
 
     public Category Category { get; }
+
+    /// <summary>Hvad der tælles som en succes - point overhovedet, eller maks point.</summary>
+    public ScoreGoal Goal { get; }
 
     /// <summary>Højeste antal omkast løsningen er beregnet for.</summary>
     public int MaxRerolls => Value.Length - 1;
@@ -96,6 +101,31 @@ public sealed class CategorySolution
     /// <summary>Den optimale "behold"-mængde for en hånd.</summary>
     public int BestKeepId(int stateId, int rerollsLeft) => BestKeep[rerollsLeft][stateId];
 
+    /// <summary>
+    /// Sandsynligheden for at nå målet hvis man <b>beholder præcis de terninger</b>
+    /// og derefter spiller optimalt. Det er værdien af netop den gren i udfaldstræet.
+    /// </summary>
+    /// <param name="keepId">"Behold"-mængdens id i <see cref="DiceCatalog"/>.</param>
+    /// <param name="rerollsLeft">Antal omkast tilbage, inklusive det der kastes nu.</param>
+    public double ProbabilityWithKeep(int keepId, int rerollsLeft) =>
+        rerollsLeft <= 0
+            ? throw new ArgumentOutOfRangeException(nameof(rerollsLeft), rerollsLeft, "Der skal være mindst ét omkast tilbage.")
+            : KeepValue[rerollsLeft][keepId];
+
+    /// <summary>
+    /// Sandsynligheden for at nå målet ud fra de terninger der beholdes. Er
+    /// <paramref name="keepCounts"/> <c>null</c>, bruges den optimale "behold"-mængde.
+    /// </summary>
+    public double Probability(int stateId, int rerollsLeft, int[]? keepCounts)
+    {
+        if (rerollsLeft <= 0 || keepCounts is null)
+        {
+            return Value[rerollsLeft][stateId];
+        }
+
+        return ProbabilityWithKeep(_catalog.KeepId(keepCounts), rerollsLeft);
+    }
+
     /// <summary>Alle "behold"-muligheder for en hånd, sorteret efter sandsynlighed.</summary>
     public IReadOnlyList<KeepOption> RankKeeps(int stateId, int rerollsLeft)
     {
@@ -126,23 +156,32 @@ public sealed class CategorySolution
     /// <param name="stateId">Håndens id.</param>
     /// <param name="rerollsLeft">Antal omkast tilbage.</param>
     /// <param name="maxChildren">Højst så mange udfald pr. knude (de mest sandsynlige vises).</param>
-    public OutcomeTreeNode BuildTree(int stateId, int rerollsLeft, int maxChildren = 6) =>
-        BuildNode(stateId, rerollsLeft, branchProbability: 1d, pathProbability: 1d, maxChildren);
+    /// <param name="forcedKeep">
+    /// Beholdes disse terninger i roden i stedet for de optimale? Bruges når spilleren
+    /// selv har markeret hvilke terninger der skal blive liggende. Dybere i træet
+    /// spilles der optimalt.
+    /// </param>
+    public OutcomeTreeNode BuildTree(int stateId, int rerollsLeft, int maxChildren = 6, int[]? forcedKeep = null)
+    {
+        var forcedKeepId = rerollsLeft > 0 && forcedKeep is not null ? _catalog.KeepId(forcedKeep) : (int?)null;
+        return BuildNode(stateId, rerollsLeft, branchProbability: 1d, pathProbability: 1d, maxChildren, forcedKeepId);
+    }
 
-    private OutcomeTreeNode BuildNode(int stateId, int rerollsLeft, double branchProbability, double pathProbability, int maxChildren)
+    private OutcomeTreeNode BuildNode(
+        int stateId, int rerollsLeft, double branchProbability, double pathProbability, int maxChildren, int? forcedKeepId = null)
     {
         var counts = _catalog.FullState(stateId);
-        var isHit = YatzyRules.IsHit(Category, counts);
-        var value = Value[rerollsLeft][stateId];
+        var isHit = YatzyRules.IsAchieved(Category, Goal, counts);
 
         if (rerollsLeft == 0)
         {
             return new OutcomeTreeNode(
-                counts, DiceCatalog.ToDice(counts), branchProbability, pathProbability, value,
+                counts, DiceCatalog.ToDice(counts), branchProbability, pathProbability, Value[0][stateId],
                 rerollsLeft, Array.Empty<int>(), isHit, Array.Empty<OutcomeTreeNode>(), 0, 0d);
         }
 
-        var keepId = BestKeep[rerollsLeft][stateId];
+        var keepId = forcedKeepId ?? BestKeep[rerollsLeft][stateId];
+        var value = forcedKeepId.HasValue ? KeepValue[rerollsLeft][keepId] : Value[rerollsLeft][stateId];
         var targets = _catalog.TransitionTargets(keepId);
         var probabilities = _catalog.TransitionProbabilities(keepId);
 
@@ -188,13 +227,18 @@ public sealed class CategorySolution
 /// <para>
 /// Rekursionen er:
 /// <code>
-/// V(hånd, 0 omkast)  = 1 hvis slaget er opfyldt, ellers 0
+/// V(hånd, 0 omkast)  = 1 hvis målet er nået (point, eller maks point), ellers 0
 /// V(hånd, r omkast)  = max over "behold"-mængder K ⊆ hånd af
 ///                      Σ P(udfald u) · V(K ∪ u, r-1)
 /// </code>
 /// Maks-leddet er spillerens valg (beslutningsknude), summen er terningernes
-/// tilfældighed (chanceknude). Resultatet er den eksakte sandsynlighed for at slå
-/// slaget når man spiller optimalt netop efter det slag.
+/// tilfældighed (chanceknude). Resultatet er den eksakte sandsynlighed for at nå målet
+/// når man spiller optimalt netop efter det slag.
+/// </para>
+/// <para>
+/// Har spilleren selv markeret hvilke terninger der skal beholdes, springes maks-leddet
+/// over i første omkast: så bruges <see cref="CategorySolution.ProbabilityWithKeep"/>,
+/// som er værdien af netop den gren. Resten af træet regnes stadig med optimalt spil.
 /// </para>
 /// <para>
 /// Et fuldt udfoldet træ over ordnede kast har 46.656 grene pr. kast og op til 64
@@ -206,7 +250,7 @@ public sealed class CategorySolution
 public sealed class OutcomeTreeSolver
 {
     private readonly DiceCatalog _catalog;
-    private readonly ConcurrentDictionary<(Category Category, int MaxRerolls), CategorySolution> _cache = new();
+    private readonly ConcurrentDictionary<(Category Category, ScoreGoal Goal, int MaxRerolls), CategorySolution> _cache = new();
 
     public OutcomeTreeSolver(DiceCatalog? catalog = null) => _catalog = catalog ?? DiceCatalog.Instance;
 
@@ -215,15 +259,20 @@ public sealed class OutcomeTreeSolver
 
     public DiceCatalog Catalog => _catalog;
 
-    /// <summary>Løser ét slag. Resultatet caches.</summary>
-    public CategorySolution Solve(Category category, int maxRerolls = YatzyRules.RollsPerTurn) =>
-        _cache.GetOrAdd((category, maxRerolls), key => Compute(key.Category, key.MaxRerolls));
+    /// <summary>Løser ét slag for et givet mål. Resultatet caches.</summary>
+    public CategorySolution Solve(
+        Category category,
+        ScoreGoal goal = ScoreGoal.AnyPoints,
+        int maxRerolls = YatzyRules.RollsPerTurn) =>
+        _cache.GetOrAdd((category, goal, maxRerolls), key => Compute(key.Category, key.Goal, key.MaxRerolls));
 
-    /// <summary>Løser alle 20 slag.</summary>
-    public IReadOnlyDictionary<Category, CategorySolution> SolveAll(int maxRerolls = YatzyRules.RollsPerTurn) =>
-        Categories.All.ToDictionary(category => category, category => Solve(category, maxRerolls));
+    /// <summary>Løser alle 20 slag for et givet mål.</summary>
+    public IReadOnlyDictionary<Category, CategorySolution> SolveAll(
+        ScoreGoal goal = ScoreGoal.AnyPoints,
+        int maxRerolls = YatzyRules.RollsPerTurn) =>
+        Categories.All.ToDictionary(category => category, category => Solve(category, goal, maxRerolls));
 
-    private CategorySolution Compute(Category category, int maxRerolls)
+    private CategorySolution Compute(Category category, ScoreGoal goal, int maxRerolls)
     {
         var states = _catalog.FullStateCount;
         var value = new double[maxRerolls + 1][];
@@ -236,7 +285,7 @@ public sealed class OutcomeTreeSolver
         keepValue[0] = Array.Empty<double>();
         for (var stateId = 0; stateId < states; stateId++)
         {
-            value[0][stateId] = YatzyRules.IsHit(category, _catalog.FullState(stateId)) ? 1d : 0d;
+            value[0][stateId] = YatzyRules.IsAchieved(category, goal, _catalog.FullState(stateId)) ? 1d : 0d;
             bestKeep[0][stateId] = _catalog.KeepId(_catalog.FullState(stateId));
         }
 
@@ -288,6 +337,6 @@ public sealed class OutcomeTreeSolver
             bestKeep[r] = choice;
         }
 
-        return new CategorySolution(category, _catalog, value, keepValue, bestKeep, edgeCount);
+        return new CategorySolution(category, goal, _catalog, value, keepValue, bestKeep, edgeCount);
     }
 }
